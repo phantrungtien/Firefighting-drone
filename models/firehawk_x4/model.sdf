@@ -1,0 +1,976 @@
+<?xml version="1.0" ?>
+<!--
+  FireHawk X4 trên khung ZD650 - quad chữa cháy, MTOW 4.69 kg, mang 1 quả Elide.
+
+  ===========================================================================
+  KHUNG ZD650 (số liệu nhà sản xuất)
+  ===========================================================================
+    wheelbase          650 mm  (chéo motor-motor)  -> x = y = 0.2298
+    càng               ống carbon 20 mm            -> radius 0.010
+    tấm giữa           150 x 150 mm
+    cánh tối đa        16-17"   <- KHÔNG dùng hết: build này dùng 10"
+    motor gợi ý        3508 / 4114 / 4312, 4S-6S
+
+  Vì sao 10" trên khung 650: motor 3115 900KV là motor FPV long-range, thiết
+  kế cho cánh 10" ở 6S. Khoảng cách 2 motor kề nhau = 0.65/sqrt(2) = 0.46 m,
+  cánh 10" (0.254 m) hở tới 0.206 m - thừa chỗ, không hề chạm nhau.
+
+  CÁI GIÁ PHẢI TRẢ, ghi ra đây để đừng ngạc nhiên lúc đọc log:
+    tải đĩa = 4.69 kg / (4 * pi * 0.127^2) = 23.1 kg/m2
+  Drone khảo sát bình thường là 5-10 kg/m2. Tải đĩa gấp đôi ba lần nghĩa là
+  công suất treo cao và thời gian bay ngắn (~8-9 phút với pin 6S 8000 mAh).
+  Đây là hệ quả vật lý của cánh nhỏ trên khung lớn, không phải lỗi mô hình.
+
+  ===========================================================================
+  NGÂN SÁCH KHỐI LƯỢNG
+  ===========================================================================
+    base_link                                  3.10 kg
+      khung ZD650 (2 tấm + 4 càng)   0.70
+      càng đáp                       0.25
+      4 motor 3115 x 0.13            0.52
+      4 ESC 60A + PDB + dây          0.30
+      Pixhawk + GPS + telemetry      0.28
+      pin 6S 8000 mAh                1.05
+    4 cánh 10" x 0.02                          0.08 kg
+    imu_link                                   0.02 kg
+    1 chốt thả                                 0.02 kg
+    camera RGB nadir                           0.10 kg
+    RealSense D435i (số của Intel)             0.072 kg
+    ________________________________________________
+    KHÔ                                        3.39 kg
+    1 quả Elide                                1.30 kg
+    MTOW                                       4.69 kg   -> cần 46.0 N
+
+  ===========================================================================
+  HIỆU CHỈNH LỰC ĐẨY  << 4 NÚM VẶN
+  ===========================================================================
+  Mốc đo thật: 3115 900KV, 6S, cánh 1045 ba lá -> 4.1 kg (40.2 N) mỗi motor ở
+  100% ga, khoảng 1600 W. Bốn motor = 161 N.
+
+    multiplier  1450 rad/s (13 850 rpm) - 900KV * 22.2V * 0.70 hệ số tải
+    cp          0.09 m                  - tâm áp 0.71R với R = 0.127 m
+    area        0.00154 m2              - HIỆU CHỈNH, không phải hình học
+    cda         1.29                    - HIỆU CHỈNH mô-men, xem dưới
+
+  area: hình học của cánh 10" ba lá cho ~0.0042 m2/phần tử, nhưng mô hình
+  LiftDrag phẳng với cl = cla*a0 = 1.275 phóng đại lực đẩy khoảng 2.7 lần.
+  Nên area là núm vặn để KHỚP SỐ ĐO, không phải để tả hình dáng cánh.
+
+    L = 0.5*1.2041*(1450*0.09)^2 * 0.00154 * (4.25*0.3) = 20.1 N/phần tử
+      -> 40.2 N/rotor, 161 N tổng
+      -> treo ở sqrt(46.0/161) = 53.5% ga, T/W = 3.50.
+
+  cda: bản iris gốc để 0.10, cho mô-men cản Q/T = 0.0021 m. Motor thật ở mốc
+  trên có Q = 1600/1450 = 1.10 N.m với T = 40.2 N, tức Q/T = 0.0274 m - GẤP
+  13 LẦN. Sai số đó không đụng tới lực nâng nhưng làm quyền lực yaw (vốn sinh
+  ra từ chênh lệch mô-men) yếu đi 13 lần. Đặt cda = 1.29 cho Q/T khớp số đo.
+  NẾU YAW LẮC/QUÁ NHẠY: đây là số cần hạ trước tiên, không phải ATC_RAT_YAW_P.
+
+  T/W 3.50 là lực đẩy ĐỈNH: 4 x 85 A = 340 A, pin 6S 8000 mAh 45C chỉ chịu
+  được vài giây. Sim không mô phỏng sụt áp pin, nên full ga trong sim lạc quan
+  hơn ngoài đời. Treo ở 53.5% thì dòng thật khoảng 4 x 22 A - hoàn toàn bình
+  thường.
+
+  ĐÃ NGHIỆM THU trong sim, không còn là phép tính trên giấy
+  (scripts/measure_hover.py, đọc RCOU từ log dataflash):
+
+    TRƯỚC khi gắn D435i, MTOW 4.62 kg - bay nhiệm vụ đầy đủ:
+      mang đủ tải  ga treo 53.4 %   (giấy: 53.0 %)
+      sau khi thả  ga treo 45.1 %   (giấy: 45.0 %)
+
+    SAU khi gắn D435i, khô 3.39 kg - scripts/fly_hover.py, treo 45 s ở 15 m:
+      mang Elide 1.3 kg   ga treo 53.6 %   (giấy: 53.5 %)
+      mang quả 0.5 kg     ga treo 48.8 %   (giấy: 48.7 %)
+      sau khi thả         CHƯA ĐO LẠI      (giấy: 45.5 %)
+
+  Bốn điểm tải khác nhau đều lệch dưới 0.5 điểm phần trăm so với giấy. Đó mới
+  là thứ xác nhận được mô hình lực đẩy bậc hai LẪN ngân sách khối lượng - một
+  điểm thôi thì chỉnh area là khớp được, không chứng minh gì.
+
+  Đo bằng RCOU (PWM ra motor), KHÔNG bằng CTUN.ThO. ThO là phần trăm LỰC ĐẨY
+  đã qua tuyến tính hoá MOT_THST_EXPO, cùng lúc đó chỉ đọc ra 25% - so nhầm
+  với 53% ở trên là kết luận sai hoàn toàn.
+
+  ===========================================================================
+  THỨ TỰ ROTOR (ArduCopter Quad X) - SAI LÀ KHÔNG BAY ĐƯỢC
+  ===========================================================================
+    rotor_0  trước-phải  CCW  multiplier +1450  -> SERVO1
+    rotor_1  sau-trái    CCW  multiplier +1450  -> SERVO2
+    rotor_2  trước-trái  CW   multiplier -1450  -> SERVO3
+    rotor_3  sau-phải    CW   multiplier -1450  -> SERVO4
+  Chiều quay mã hoá bằng dấu multiplier VÀ vector <forward> của LiftDrag,
+  hai chỗ phải khớp nhau. Sao đúng quy ước của iris_with_ardupilot.
+
+  ===========================================================================
+  CƠ CẤU THẢ - MỘT khoang, đặt giữa
+  ===========================================================================
+  Chỉ 1 quả nên treo ngay trục tâm: CG không lệch, và không mất cân bằng đột
+  ngột theo trục lăn lúc nhả. Thả 1.30/4.69 = 28% khối lượng (khung cũ 9 kg
+  chỉ mất 14%) - cú vọt lên sau khi nhả MẠNH GẤP ĐÔI, state RECOVER của
+  mission_node càng cần thiết.
+
+  ArduPilotPlugin.cc dòng 617-624: nếu <jointName> không tồn tại thì plugin
+  RETURN, tức là toàn bộ plugin chết và drone không bay. Kênh COMMAND cũng
+  không ngoại lệ. Nên khoang có bay1_latch_joint thật - vừa thoả plugin, vừa
+  đúng cái servo latch trên drone thật.
+-->
+<sdf version="1.9">
+  <model name="firehawk_x4">
+
+    <!-- ==================================================================
+         THÂN
+         ================================================================== -->
+    <link name="base_link">
+      <inertial>
+        <mass>3.10</mass>
+        <!-- Tổng trực tiếp, không phải ước lượng khối hộp đặc:
+               tấm+pin+điện tử 2.33 kg trong hộp 0.16x0.16x0.12
+               4 motor 0.13 kg tại bán kính 0.325 m  <- chi phối izz
+               càng đáp 0.25 kg tại r~0.15, z~-0.22
+             ixx = 0.0078 + 0.0279 + 0.0177 + 0.004(càng) = 0.058
+             izz = 0.0099 + 0.0549 + 0.0113 + 0.008(càng) = 0.084 -->
+        <inertia>
+          <ixx>0.058</ixx><ixy>0</ixy><ixz>0</ixz>
+          <iyy>0.058</iyy><iyz>0</iyz><izz>0.084</izz>
+        </inertia>
+      </inertial>
+
+      <collision name="body_collision">
+        <geometry><box><size>0.16 0.16 0.12</size></box></geometry>
+      </collision>
+
+      <visual name="body_visual">
+        <geometry><box><size>0.16 0.16 0.12</size></box></geometry>
+        <material>
+          <ambient>0.12 0.12 0.14 1</ambient>
+          <diffuse>0.18 0.18 0.20 1</diffuse>
+          <specular>0.30 0.30 0.30 1</specular>
+        </material>
+      </visual>
+
+      <!-- mũi đỏ: nhìn ra hướng bay khi quay video. Nằm CAO HƠN camera nadir
+           nên không bao giờ lọt vào khung hình - kiểm lại nếu dời camera. -->
+      <visual name="nose_visual">
+        <pose>0.09 0 0.02 0 1.5708 0</pose>
+        <geometry><cylinder><radius>0.028</radius><length>0.04</length></cylinder></geometry>
+        <material>
+          <ambient>0.6 0.05 0.05 1</ambient>
+          <diffuse>0.9 0.08 0.08 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- 4 càng ống carbon 20 mm: nửa đường chéo 0.325 m (wheelbase 650 mm) -->
+      <visual name="arm_0"><pose>0.1149 -0.1149 0.02 0 1.5708 -0.7854</pose>
+        <geometry><cylinder><radius>0.010</radius><length>0.325</length></cylinder></geometry>
+        <material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.15 0.15 0.15 1</diffuse></material>
+      </visual>
+      <visual name="arm_1"><pose>-0.1149 0.1149 0.02 0 1.5708 -0.7854</pose>
+        <geometry><cylinder><radius>0.010</radius><length>0.325</length></cylinder></geometry>
+        <material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.15 0.15 0.15 1</diffuse></material>
+      </visual>
+      <visual name="arm_2"><pose>0.1149 0.1149 0.02 0 1.5708 0.7854</pose>
+        <geometry><cylinder><radius>0.010</radius><length>0.325</length></cylinder></geometry>
+        <material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.15 0.15 0.15 1</diffuse></material>
+      </visual>
+      <visual name="arm_3"><pose>-0.1149 -0.1149 0.02 0 1.5708 0.7854</pose>
+        <geometry><cylinder><radius>0.010</radius><length>0.325</length></cylinder></geometry>
+        <material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.15 0.15 0.15 1</diffuse></material>
+      </visual>
+
+      <!-- càng đáp: quả cầu (tâm z=-0.15, R=0.075) đáy ở -0.225, bàn chân ở
+           -0.30 -> hở đất 7.5 cm. Đừng rút ngắn nếu chưa dời khoang thả. -->
+      <visual name="leg_fl"><pose>0.10 0.10 -0.185 0 0.22 0</pose>
+        <geometry><cylinder><radius>0.010</radius><length>0.26</length></cylinder></geometry>
+        <material><ambient>0.08 0.08 0.08 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material>
+      </visual>
+      <visual name="leg_fr"><pose>0.10 -0.10 -0.185 0 0.22 0</pose>
+        <geometry><cylinder><radius>0.010</radius><length>0.26</length></cylinder></geometry>
+        <material><ambient>0.08 0.08 0.08 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material>
+      </visual>
+      <visual name="leg_bl"><pose>-0.10 0.10 -0.185 0 -0.22 0</pose>
+        <geometry><cylinder><radius>0.010</radius><length>0.26</length></cylinder></geometry>
+        <material><ambient>0.08 0.08 0.08 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material>
+      </visual>
+      <visual name="leg_br"><pose>-0.10 -0.10 -0.185 0 -0.22 0</pose>
+        <geometry><cylinder><radius>0.010</radius><length>0.26</length></cylinder></geometry>
+        <material><ambient>0.08 0.08 0.08 1</ambient><diffuse>0.12 0.12 0.12 1</diffuse></material>
+      </visual>
+
+      <!-- bàn chân: đây mới là phần chạm đất -->
+      <collision name="foot_f">
+        <pose>0.15 0 -0.30 0 1.5708 1.5708</pose>
+        <geometry><cylinder><radius>0.015</radius><length>0.30</length></cylinder></geometry>
+        <surface><friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction></surface>
+      </collision>
+      <collision name="foot_b">
+        <pose>-0.15 0 -0.30 0 1.5708 1.5708</pose>
+        <geometry><cylinder><radius>0.015</radius><length>0.30</length></cylinder></geometry>
+        <surface><friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction></surface>
+      </collision>
+      <visual name="foot_f_visual">
+        <pose>0.15 0 -0.30 0 1.5708 1.5708</pose>
+        <geometry><cylinder><radius>0.015</radius><length>0.30</length></cylinder></geometry>
+        <material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.10 0.10 0.10 1</diffuse></material>
+      </visual>
+      <visual name="foot_b_visual">
+        <pose>-0.15 0 -0.30 0 1.5708 1.5708</pose>
+        <geometry><cylinder><radius>0.015</radius><length>0.30</length></cylinder></geometry>
+        <material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.10 0.10 0.10 1</diffuse></material>
+      </visual>
+
+      <!-- cần đỡ camera nadir: từ mép bụng ra trước-xuống tới thân camera ở
+           (0.26, 0, -0.18). Điểm THẤP NHẤT của cần chính là đầu gắn camera,
+           nên bản thân cần không bao giờ lọt vào khung hình - phần còn lại
+           của nó nằm ngang hoặc cao hơn ống kính.
+           Hướng (0.18, 0, -0.115) chuẩn hoá = (0.843, 0, -0.539); trục ống
+           trụ là Z cục bộ nên xoay pitch 2.139 rad đưa ẑ về đúng hướng đó. -->
+      <visual name="cam_boom">
+        <pose>0.17 0 -0.1175 0 2.139 0</pose>
+        <geometry><cylinder><radius>0.008</radius><length>0.214</length></cylinder></geometry>
+        <material><ambient>0.08 0.08 0.08 1</ambient><diffuse>0.13 0.13 0.13 1</diffuse></material>
+      </visual>
+
+      <!-- ==================================================================
+           LỒNG GIỮ QUẢ CẦU - phần CỐ ĐỊNH của cơ cấu thả.
+
+           Quả cầu KHÔNG còn bị DetachableJoint dính vào drone: nó là một vật
+           rời, TÌ LÊN chốt và bị bốn cột này giữ khỏi lăn. Nó chỉ có đúng một
+           đường thoát - đi THẲNG XUỐNG - và chốt bịt đường đó lại.
+
+           Tâm cầu ở (0, 0, -0.15), bán kính 0.075:
+             nóc lồng  bay_rail    đáy ở -0.0725, hở nóc cầu 2.5 mm
+             4 cột     bay_post_*  mặt trong ở +-0.078, hở hông cầu 3 mm
+             đáy       bay1_latch  mặt trên ở -0.225, ĐÚNG đáy cầu
+           Hở 2.5-3 mm là có chủ ý: khít quá thì lúc load Gazebo tính ra xuyên
+           nhau và bắn quả cầu ra; rộng quá thì cầu nảy lạch cạch trong lồng.
+
+           ⚠ Cột chỉ với xuống -0.225 (ngang đáy cầu). Cầu tụt hơn 0.07 m là
+           xích đạo của nó ra khỏi cột và không còn gì dẫn hướng nữa - đúng
+           lúc đó chốt đã mở hẳn nên không sao, nhưng KÉO DÀI CỘT XUỐNG là
+           cầu bị kẹp lâu hơn và rơi lệch.
+
+           mu 0.15: cầu phải TRƯỢT dọc cột khi rơi, không bám. Để mu mặc định
+           (~1.0) là cầu nghiến vào cột, rơi chậm hơn tính toán đạn đạo.
+           ================================================================== -->
+      <collision name="bay_rail">
+        <pose>0 0 -0.0625 0 0 0</pose>
+        <geometry><box><size>0.10 0.09 0.02</size></box></geometry>
+        <surface><friction><ode><mu>0.15</mu><mu2>0.15</mu2></ode></friction></surface>
+      </collision>
+      <visual name="bay_rail">
+        <pose>0 0 -0.0625 0 0 0</pose>
+        <geometry><box><size>0.10 0.09 0.02</size></box></geometry>
+        <material><ambient>0.25 0.20 0.05 1</ambient><diffuse>0.45 0.35 0.08 1</diffuse></material>
+      </visual>
+
+      <collision name="bay_post_f">
+        <pose>0.082 0 -0.150 0 0 0</pose>
+        <geometry><box><size>0.008 0.036 0.13</size></box></geometry>
+        <surface><friction><ode><mu>0.15</mu><mu2>0.15</mu2></ode></friction></surface>
+      </collision>
+      <visual name="bay_post_f">
+        <pose>0.082 0 -0.150 0 0 0</pose>
+        <geometry><box><size>0.008 0.036 0.13</size></box></geometry>
+        <material><ambient>0.25 0.20 0.05 1</ambient><diffuse>0.45 0.35 0.08 1</diffuse></material>
+      </visual>
+
+      <collision name="bay_post_b">
+        <pose>-0.082 0 -0.150 0 0 0</pose>
+        <geometry><box><size>0.008 0.036 0.13</size></box></geometry>
+        <surface><friction><ode><mu>0.15</mu><mu2>0.15</mu2></ode></friction></surface>
+      </collision>
+      <visual name="bay_post_b">
+        <pose>-0.082 0 -0.150 0 0 0</pose>
+        <geometry><box><size>0.008 0.036 0.13</size></box></geometry>
+        <material><ambient>0.25 0.20 0.05 1</ambient><diffuse>0.45 0.35 0.08 1</diffuse></material>
+      </visual>
+
+      <collision name="bay_post_l">
+        <pose>0 0.082 -0.150 0 0 0</pose>
+        <geometry><box><size>0.036 0.008 0.13</size></box></geometry>
+        <surface><friction><ode><mu>0.15</mu><mu2>0.15</mu2></ode></friction></surface>
+      </collision>
+      <visual name="bay_post_l">
+        <pose>0 0.082 -0.150 0 0 0</pose>
+        <geometry><box><size>0.036 0.008 0.13</size></box></geometry>
+        <material><ambient>0.25 0.20 0.05 1</ambient><diffuse>0.45 0.35 0.08 1</diffuse></material>
+      </visual>
+
+      <collision name="bay_post_r">
+        <pose>0 -0.082 -0.150 0 0 0</pose>
+        <geometry><box><size>0.036 0.008 0.13</size></box></geometry>
+        <surface><friction><ode><mu>0.15</mu><mu2>0.15</mu2></ode></friction></surface>
+      </collision>
+      <visual name="bay_post_r">
+        <pose>0 -0.082 -0.150 0 0 0</pose>
+        <geometry><box><size>0.036 0.008 0.13</size></box></geometry>
+        <material><ambient>0.25 0.20 0.05 1</ambient><diffuse>0.45 0.35 0.08 1</diffuse></material>
+      </visual>
+    </link>
+
+    <!-- ==================================================================
+         IMU
+         ================================================================== -->
+    <link name="imu_link">
+      <pose>0 0 0.02 0 0 0</pose>
+      <inertial>
+        <mass>0.02</mass>
+        <inertia><ixx>1e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+                 <iyy>1e-5</iyy><iyz>0</iyz><izz>1e-5</izz></inertia>
+      </inertial>
+      <sensor name="imu_sensor" type="imu">
+        <gz_frame_id>imu_link</gz_frame_id>
+        <!-- XOAY 180 deg QUANH X - BỎ DÒNG NÀY LÀ DRONE LẬT NGỬA.
+             Link trong gz dùng ENU thân: X trước, Y TRÁI, Z LÊN.
+             ArduPilot đọc IMU như FRD: X trước, Y PHẢI, Z XUỐNG.
+             Không xoay thì lăn và hướng vào bộ điều khiển NGƯỢC DẤU: sai số
+             lăn dương làm ArduCopter đẩy mạnh thêm về phía đang nghiêng, phân
+             kỳ trong 0.24 s. Chúc thì đúng dấu nên nhìn log càng khó hiểu.
+             Không có một dòng cảnh báo nào từ Gazebo, ArduPilot hay MAVROS.
+             <modelXYZToAirplaneXForwardZDown> của plugin KHÔNG thay được chỗ
+             này - nó lo phần tư thế/vận tốc, không đụng tới dữ liệu IMU.
+             Sao đúng iris_with_standoffs/model.sdf dòng 251. -->
+        <pose degrees="true">0 0 0 180 0 0</pose>
+        <always_on>1</always_on>
+        <update_rate>1000</update_rate>
+      </sensor>
+    </link>
+    <joint name="imu_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>imu_link</child>
+    </joint>
+
+    <!-- ==================================================================
+         CAMERA RGB - hướng nadir cố định (nhìn thẳng xuống)
+         Xoay pitch +90 deg: trục X của camera (0,0,-1) -> nhìn xuống.
+
+         VỊ TRÍ (0.26, 0, -0.18) LÀ SỐ ĐO, KHÔNG PHẢI ƯỚC LƯỢNG. Hai vật của
+         chính drone tranh chỗ với khung hình, và chúng kéo về hai phía ngược
+         nhau:
+
+           QUẢ CẦU ĐỎ treo ở (0,0,-0.15) bán kính 0.075 - diffuse (0.85,0.10,
+           0.08) lọt ĐÚNG dải màu lửa. Lùi camera về sau là nó vào khung và
+           fire_detector báo cháy giả ngay dưới bụng. -> ĐẨY CAMERA RA TRƯỚC.
+
+           BÀN CHÂN TRƯỚC foot_f: ống ngang dài 0.30 m ở (0.15, 0, -0.30).
+           Bản trước đặt camera ở (0.14, -0.07), tức NGAY TRÊN nó, cách 0.23 m
+           -> một dải đen dày 100 px chắn hết bề ngang khung hình, mọi khung,
+           vĩnh viễn (21% ảnh). Đo được: khi bay thẳng trên nóc nhà cháy nó
+           cắt đôi cột lửa và kéo tâm khối lệch có hệ thống 1.8 m. Ảnh vẫn
+           đẹp, topic vẫn 20 Hz, không một dòng cảnh báo.
+           -> ĐẨY CAMERA RA TRƯỚC VÀ XUỐNG THẤP cho bàn chân ra sau khung.
+
+         Ràng buộc chặt nhất KHÔNG phải lúc bay bằng mà lúc CHÚC MŨI 15 deg
+         vào đường thả: khung hình nghiêng ra sau thêm 15 deg, mép sau thành
+         32.3 deg so với phương thẳng đứng, vừa đúng chỗ bàn chân. Ở
+         (0.26, -0.18) còn dư 5.0 deg; lùi về (0.24, -0.09) là bàn chân vào
+         khung lại. test_rgb_khong_thay_than_drone quét đủ dải pitch +-15 deg.
+
+         Camera nằm cao hơn đáy bàn chân 0.135 m nên vẫn không phải vật chạm
+         đất khi hạ cánh.
+         ================================================================== -->
+    <link name="rgb_cam_link">
+      <pose>0.26 0 -0.18 0 1.5708 0</pose>
+      <inertial>
+        <mass>0.10</mass>
+        <inertia><ixx>1e-4</ixx><ixy>0</ixy><ixz>0</ixz>
+                 <iyy>1e-4</iyy><iyz>0</iyz><izz>1e-4</izz></inertia>
+      </inertial>
+      <visual name="visual">
+        <geometry><box><size>0.05 0.04 0.04</size></box></geometry>
+        <material><ambient>0.02 0.02 0.02 1</ambient><diffuse>0.05 0.05 0.05 1</diffuse></material>
+      </visual>
+      <sensor name="rgb_camera" type="camera">
+        <always_on>1</always_on>
+        <update_rate>15</update_rate>
+        <!-- gz suy ra topic camera_info bằng cách thay thành phần cuối cùng:
+             "rgb/image" -> "/rgb/image" + "/rgb/camera_info".
+             Nếu để "rgb" thì camera_info rơi vào "/camera_info" trống trơn ở
+             gốc, dễ đụng độ với camera khác. -->
+        <topic>rgb/image</topic>
+        <camera>
+          <!-- = camera THẬT trên Jetson: webcam 4K, HFOV ~70 deg (chưa calib, theo
+               person_follow_reid.HFOV_DEG), Jetson cắt giữa theo zoom rồi co về 960x540
+               (mjpeg-stream-jetson.service) - marker_detector làm bước cắt đó trong sim.
+               Sim không kéo nổi 4K: 1920x1080 15 Hz, tức zoom x2 còn là điểm ảnh thật,
+               x3..x5 là phóng ảnh (KÉM hơn thật - sim qua được thì thật càng chắc).
+               Trước 18/10/2026 là 640x480 45 deg của camera nhiệt cũ. -->
+          <horizontal_fov>1.22173</horizontal_fov>
+          <image>
+            <width>1920</width>
+            <height>1080</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip><near>0.1</near><far>300</far></clip>
+          <!-- NHIỄU CẢM BIẾN: camera gz mặc định sạch tuyệt đối, cảnh đứng yên
+               (drone nằm đất, cỏ một màu) cho JPEG GIỐNG TỪNG BYTE -> GUI_NATIVE
+               báo "camera đứng hình" dù luồng vẫn chạy 16 Hz (đo 15/10/2026:
+               15 khung/4 s, cả 15 cùng md5). Camera thật luôn có nhiễu; 0.007
+               (~2/255) đủ đổi byte JPEG mà mắt không thấy. -->
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.007</stddev>
+          </noise>
+        </camera>
+      </sensor>
+    </link>
+    <joint name="rgb_cam_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>rgb_cam_link</child>
+    </joint>
+
+    <!-- ==================================================================
+         REALSENSE D435i - nhìn TRƯỚC-CHÚC XUỐNG 20 deg, gắn cứng vào mũi
+
+         Model chép nguyên từ ~/gz_ws/src/drone_vision (dự án bay qua vòng),
+         xem models/realsense_d435i/model.sdf. Cách gắn cũng theo đúng bản
+         iris_with_d435i bên đó: include + một khớp fixed sang d435i::camera_link.
+
+         VỊ TRÍ x = 0.132, y = +0.0175 - GIỐNG HỆT LÝ DO CỦA BẢN IRIS:
+         camera_link KHÔNG phải tâm module, nó là MẮT IR TRÁI. Tâm khối 90 mm
+         nằm ở camera_link + (-0.0106, -0.0175, 0). Muốn thân camera nằm đúng
+         trục tâm drone thì camera_link phải lệch sang y = +0.0175. Hệ quả có
+         thật cả trên phần cứng: trục quang depth lệch trái 17.5 mm so với trục
+         drone (~0.2 deg sai phương hướng ở 5 m). Muốn ngược lại - trục quang
+         đúng tâm, thân camera lệch - thì để y = 0.
+         x: mặt sau module rơi vào 0.110, đúng mặt trước của mũi đỏ (mũi kéo
+         dài 0.07..0.11), tức camera bắt vào mũi chứ không lơ lửng giữa trời.
+
+         CHÚC XUỐNG 20 deg - ĐÂY LÀ CHỖ KHÁC BẢN IRIS, VÀ CÓ LÝ DO ĐO ĐƯỢC:
+         iris để 0 deg vì trên khung 550 mm cánh 10", mép đĩa cánh gần nhất
+         nằm 53 deg lệch trục quang, ngoài nửa góc mở 43.5 deg. ZD650 rộng
+         hơn: cánh trước ở (0.2298, ±0.2298) chỉ cách trục tâm 0.103 m chỗ gần
+         nhất, còn mũi thì không dài thêm được. Quét toàn bộ 4 đĩa cánh qua
+         khối chóp nhìn 87 x 56.5 deg:
+
+             chúc  0 deg  ->  290 điểm TRONG khung, sâu nhất 10.9 deg
+             chúc 10 deg  ->  161 điểm TRONG khung, sâu nhất  4.0 deg
+             chúc 15 deg  ->  sạch, nhưng biên chỉ 0.6 deg
+             chúc 20 deg  ->  sạch, biên 5.5 deg      <- chọn cái này
+
+         ĐÃ ĐO TRONG GAZEBO, không chỉ tính trên giấy: treo drone tĩnh ở 30 m
+         (mặt đất quá tầm 10 m của D435i) rồi đọc một frame depth -
+             chúc 20 deg  ->  0 / 407040 pixel có khoảng cách hữu hạn
+             chúc  0 deg  ->  1292 pixel ở 0.156 - 0.250 m   = mút cánh
+         Đúng hai góc trên của ảnh, đúng như phép quét đoán.
+
+         Để 0 deg là ảnh depth luôn có một "vật cản" đứng yên vĩnh viễn ở
+         0.25 m mà mọi thuật toán tránh vật sẽ tin. 15 deg đủ sạch trên giấy
+         nhưng 0.6 deg biên là không có biên: cánh thật võng lên khi mang tải.
+         20 deg cũng là góc gắn thật của camera trước trên drone khảo sát.
+         test_model_sdf.py canh lại phép quét này - DỜI CAMERA HAY ĐỔI CÁNH LÀ
+         PHẢI CHẠY LẠI TEST.
+
+         Và ĐỪNG trông vào near clip để giấu cánh: khai <near>0.2</near> nhưng
+         gz vẫn trả về 0.156 m như số đo trên.
+
+         GIỚI HẠN CẦN BIẾT TRƯỚC KHI ĐỊNH DÙNG DEPTH ĐỂ BAY:
+         D435i chỉ đo tới 10 m (near 0.2 m). mission_node tìm kiếm ở 30 m và
+         thả ở 25 m, nên trong hành trình bình thường depth KHÔNG thấy gì -
+         nó chỉ có ích lúc gần tán cây/vật cản, hoặc khi hạ thấp. Đừng dùng nó
+         thay cao độ; phát hiện cháy vẫn là camera RGB nadir 45 deg.
+         ================================================================== -->
+    <include>
+      <uri>model://realsense_d435i</uri>
+      <name>d435i</name>
+      <pose degrees="true">0.132 0.0175 0.02 0 20 0</pose>
+    </include>
+
+    <joint name="d435i_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>d435i::camera_link</child>
+    </joint>
+
+    <!-- ==================================================================
+         KHOANG THẢ (SERVO9 / kênh 8) - CHỐT VẬT LÝ THẬT
+
+         Quả cầu rơi vì HÌNH HỌC, không vì một bản tin. Không còn
+         DetachableJoint, không còn TriggeredPublisher trong world: quả cầu là
+         vật rời nằm trong lồng (bay_rail + 4 bay_post_* của base_link), TÌ LÊN
+         mặt trên thanh chốt này. Chốt quét ra khỏi bóng quả cầu thì không còn
+         gì đỡ, cầu rơi THẲNG xuống - lồng dẫn hướng nên nó không văng ngang.
+
+         ⚠ CHỐT QUÉT NGANG (trục Z), KHÔNG PHẢI LẬT XUỐNG (trục Y).
+         Đây là kết luận ĐO ĐƯỢC, không phải sở thích. Đã dựng và chạy bản lật
+         quanh trục Y hai lần, cả hai đều hỏng:
+
+           bản lề x = -0.09, thanh 0.14   chốt KẸT ở 34 deg, cầu tụt 4.6 cm rồi
+                                          đứng. effort 3.43 N.m không đủ; phải
+                                          tới 50 N.m mới quét hết - tức không
+                                          còn là servo nào có thật.
+           bản lề x = -0.025, thanh 0.115 chốt tới 43 deg thì cầu ĐẬU LÊN ĐÚNG
+                                          CHÍNH BẢN LỀ (tay đòn = 0) và nằm im
+                                          ở đó. Cầu không rơi, log không báo gì.
+
+         Lý do chung: bốn cột ghim quả cầu ở x = y = 0 +-3 mm, nên khi cửa lật
+         nghiêng, cầu KHÔNG lăn ra được - nó trượt dọc mặt cửa về phía bản lề.
+         Cửa vừa phải đỡ cả 1.3 kg trên tay đòn dài, vừa bị chính quả cầu ghì.
+
+         Quét ngang không có cả hai bệnh: trọng lực song song với trục quay nên
+         mô-men trọng trường quanh trục ĐÚNG BẰNG 0. Servo chỉ phải thắng ma
+         sát trượt giữa cầu và thanh:
+             F = mu * m * g = 0.15 * 1.3 * 9.81 = 1.91 N  ở bán kính ~0.11 m
+             tau = 0.21 N.m   <- effort 1.96 N.m (20 kg.cm) dư 9 lần
+         Và cầu không thể tự bẩy chốt mở khi drone cơ động, vì nó không sinh
+         mô-men quanh trục dù kéo mấy g.
+
+         HÌNH HỌC - ba con số khoá chặt nhau, đổi một là phải tính lại cả ba
+         (test_chot_do_duoc_qua_cau canh):
+             bản lề     r = 0.11 m tính từ trục cầu (pose x của link này)
+             nửa bề rộng thanh  0.017 m
+             bán kính cầu       0.075 m
+         Thanh còn nằm dưới cầu chừng nào khoảng cách từ trục cầu tới TIM
+         thanh còn nhỏ hơn 0.075 + 0.017 = 0.092 m. Khoảng cách đó là
+         r*sin(theta), nên:
+             goc nha = asin(0.092 / 0.11) = 56.7 deg
+         Ở 6.5 rad/s (bão hoà <velocity> của khớp): 0.990 rad / 6.5 = 0.152 s.
+
+         ⚠ ĐỘ TRỄ CƠ KHÍ NÀY *KHÔNG* CỘNG THẲNG VÀO release_latency - ĐÃ ĐO.
+         Suy luận ban đầu là "cầu nhả muộn hơn 0.152 s nên phải nâng
+         release_latency từ 0.15 lên ~0.30". SAI. Quét thử trên chính nhiệm vụ
+         (LATENCY=... ./scripts/run_sim.sh), chấm bằng CEP của metrics:
+
+             release_latency 0.05  ->  CEP 0.53 m
+             release_latency 0.15  ->  CEP 0.77 m     <- mặc định, giữ nguyên
+             release_latency 0.30  ->  CEP 1.85 m
+             release_latency 0.65  ->  CEP 2.40 m
+
+         Đơn điệu tăng trên cả bốn điểm - không có cực tiểu ở 0.30 như lý
+         thuyết đòi. Vì sao thì
+         chưa giải thích được - ghi ra đây làm SỰ THẬT ĐO ĐƯỢC chứ không sửa
+         cho khớp lý thuyết. Đừng nâng release_latency dựa trên hình học của
+         khối này; đo bằng scripts/measure_latency.py hoặc bằng chính CEP.
+
+         <i_gain> KHÔNG ĐƯỢC BỎ dù mô-men trọng trường bằng 0: ma sát và cú
+         va lúc cơ động vẫn đẩy chốt lệch, mà JointPositionController thuần P
+         thì sai số nào cũng để lại vĩnh viễn. Servo thật không lệch vì trong
+         nó có khâu tích phân - i_gain ở đây chính là khâu đó.
+         ================================================================== -->
+    <link name="bay1_latch">
+      <pose>-0.11 0 -0.2315 0 0 0</pose>
+      <inertial>
+        <!-- thanh nhôm 0.185 m, khối tâm ở giữa thanh;
+             I quanh trục đứng qua khối tâm = m*L^2/12 = 0.02*0.0342/12 = 5.7e-5 -->
+        <pose>0.0925 0 0 0 0 0</pose>
+        <mass>0.02</mass>
+        <inertia><ixx>2.1e-6</ixx><ixy>0</ixy><ixz>0</ixz>
+                 <iyy>5.7e-5</iyy><iyz>0</iyz><izz>5.7e-5</izz></inertia>
+      </inertial>
+      <collision name="collision">
+        <pose>0.0925 0 0 0 0 0</pose>
+        <geometry><box><size>0.185 0.034 0.013</size></box></geometry>
+        <!-- mu 0.15 cùng lý do với lồng: cầu phải trôi ra, không bám vào chốt.
+             Đây CHÍNH LÀ con số quyết định mô-men servo phải thắng (0.21 N.m).
+             Nâng mu là nâng tải servo tuyến tính theo. -->
+        <surface><friction><ode><mu>0.15</mu><mu2>0.15</mu2></ode></friction></surface>
+      </collision>
+      <visual name="visual">
+        <pose>0.0925 0 0 0 0 0</pose>
+        <geometry><box><size>0.185 0.034 0.013</size></box></geometry>
+        <material><ambient>0.5 0.35 0.02 1</ambient><diffuse>0.9 0.65 0.05 1</diffuse></material>
+      </visual>
+    </link>
+    <!-- SERVO 180 deg: 0 = khoá, pi = quét hết. Hai con số là servo thật:
+           effort   1.96 N.m  = 20 kg.cm, servo bánh răng kim loại cỡ vừa
+           velocity 6.5 rad/s = 0.16 s/60 deg  -> quét hết 180 deg mất 0.48 s
+         Đừng để effort/velocity vô hạn: chốt sẽ nhảy phắt sang 180 deg trong
+         một bước vật lý, nhìn video không ra cơ cấu thật, và che mất đúng cái
+         độ trễ cơ khí mà release_latency phải bù.
+
+         Trục +Z (ĐỨNG): thanh quét trong mặt phẳng NGANG, ở z = -0.2315, tức
+         nằm trọn DƯỚI đáy 4 cột lồng (-0.215) và TRÊN bàn chân (-0.285). Nó
+         không thể va vào bất cứ thứ gì của drone ở mọi góc từ 0 tới 180 deg -
+         đó là một nửa lý do chọn phương án này. -->
+    <joint name="bay1_latch_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>bay1_latch</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit><lower>0</lower><upper>3.14159</upper><effort>1.96</effort><velocity>6.5</velocity></limit>
+        <dynamics><damping>0.02</damping></dynamics>
+      </axis>
+    </joint>
+
+    <!-- ==================================================================
+         4 ROTOR - cánh 10" (R = 0.127 m)
+         z = 0.075: mặt cánh cao hơn nóc thân (0.06) 15 mm. Mút cánh với tới
+         bán kính 0.103 theo phương chéo, còn góc thân ở 0.113 - hai cái CHỒNG
+         nhau trên mặt bằng, chỉ tách nhau nhờ chênh cao. Hạ z là va.
+         ================================================================== -->
+    <link name="rotor_0">
+      <pose>0.2298 -0.2298 0.075 0 0 0</pose>
+      <inertial>
+        <mass>0.02</mass>
+        <!-- đĩa: izz = m*R^2/2 = 1.6129e-4.  ixx = iyy phải > izz/2, KHÔNG
+             được bằng đúng: sdformat bắt bất đẳng thức tam giác
+             ixx + iyy >= izz và đĩa mỏng lý tưởng nằm ngay trên biên -> làm
+             tròn xuống một chút là "invalid inertia", world không load nổi.
+             8.5e-5 = đĩa mỏng cộng phần bầu cánh có bề dày thật. -->
+        <inertia><ixx>8.5e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+                 <iyy>8.5e-5</iyy><iyz>0</iyz><izz>1.6129e-4</izz></inertia>
+      </inertial>
+      <collision name="collision">
+        <geometry><cylinder><radius>0.127</radius><length>0.006</length></cylinder></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry><cylinder><radius>0.127</radius><length>0.006</length></cylinder></geometry>
+        <material><ambient>0.15 0.15 0.17 0.65</ambient><diffuse>0.25 0.25 0.28 0.65</diffuse></material>
+      </visual>
+    </link>
+    <joint name="rotor_0_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>rotor_0</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit><lower>-1e16</lower><upper>1e16</upper></limit>
+        <!-- 1e-4: chi la ma sat bi. Mo-men can khi quay da nam trong cda cua
+             LiftDrag roi - de damping cao la dem hai lan. -->
+        <dynamics><damping>0.0001</damping></dynamics>
+      </axis>
+    </joint>
+
+    <link name="rotor_1">
+      <pose>-0.2298 0.2298 0.075 0 0 0</pose>
+      <inertial>
+        <mass>0.02</mass>
+        <inertia><ixx>8.5e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+                 <iyy>8.5e-5</iyy><iyz>0</iyz><izz>1.6129e-4</izz></inertia>
+      </inertial>
+      <collision name="collision">
+        <geometry><cylinder><radius>0.127</radius><length>0.006</length></cylinder></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry><cylinder><radius>0.127</radius><length>0.006</length></cylinder></geometry>
+        <material><ambient>0.15 0.15 0.17 0.65</ambient><diffuse>0.25 0.25 0.28 0.65</diffuse></material>
+      </visual>
+    </link>
+    <joint name="rotor_1_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>rotor_1</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit><lower>-1e16</lower><upper>1e16</upper></limit>
+        <!-- 1e-4: chi la ma sat bi. Mo-men can khi quay da nam trong cda cua
+             LiftDrag roi - de damping cao la dem hai lan. -->
+        <dynamics><damping>0.0001</damping></dynamics>
+      </axis>
+    </joint>
+
+    <link name="rotor_2">
+      <pose>0.2298 0.2298 0.075 0 0 0</pose>
+      <inertial>
+        <mass>0.02</mass>
+        <inertia><ixx>8.5e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+                 <iyy>8.5e-5</iyy><iyz>0</iyz><izz>1.6129e-4</izz></inertia>
+      </inertial>
+      <collision name="collision">
+        <geometry><cylinder><radius>0.127</radius><length>0.006</length></cylinder></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry><cylinder><radius>0.127</radius><length>0.006</length></cylinder></geometry>
+        <material><ambient>0.17 0.15 0.15 0.65</ambient><diffuse>0.30 0.25 0.25 0.65</diffuse></material>
+      </visual>
+    </link>
+    <joint name="rotor_2_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>rotor_2</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit><lower>-1e16</lower><upper>1e16</upper></limit>
+        <!-- 1e-4: chi la ma sat bi. Mo-men can khi quay da nam trong cda cua
+             LiftDrag roi - de damping cao la dem hai lan. -->
+        <dynamics><damping>0.0001</damping></dynamics>
+      </axis>
+    </joint>
+
+    <link name="rotor_3">
+      <pose>-0.2298 -0.2298 0.075 0 0 0</pose>
+      <inertial>
+        <mass>0.02</mass>
+        <inertia><ixx>8.5e-5</ixx><ixy>0</ixy><ixz>0</ixz>
+                 <iyy>8.5e-5</iyy><iyz>0</iyz><izz>1.6129e-4</izz></inertia>
+      </inertial>
+      <collision name="collision">
+        <geometry><cylinder><radius>0.127</radius><length>0.006</length></cylinder></geometry>
+      </collision>
+      <visual name="visual">
+        <geometry><cylinder><radius>0.127</radius><length>0.006</length></cylinder></geometry>
+        <material><ambient>0.17 0.15 0.15 0.65</ambient><diffuse>0.30 0.25 0.25 0.65</diffuse></material>
+      </visual>
+    </link>
+    <joint name="rotor_3_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>rotor_3</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit><lower>-1e16</lower><upper>1e16</upper></limit>
+        <!-- 1e-4: chi la ma sat bi. Mo-men can khi quay da nam trong cda cua
+             LiftDrag roi - de damping cao la dem hai lan. -->
+        <dynamics><damping>0.0001</damping></dynamics>
+      </axis>
+    </joint>
+
+    <!-- ==================================================================
+         LIFT-DRAG: 2 phần tử cánh mỗi rotor (cùng quy ước với iris)
+         cda 1.29 (không phải 0.10 của iris) - xem "HIỆU CHỈNH LỰC ĐẨY".
+         ================================================================== -->
+    <plugin filename="gz-sim-lift-drag-system" name="gz::sim::systems::LiftDrag">
+      <a0>0.3</a0><cla>4.2500</cla><cda>1.29</cda>
+      <cla_stall>-3.85</cla_stall><cda_stall>-0.9233</cda_stall><alpha_stall>1.4</alpha_stall>
+      <area>0.00154</area><air_density>1.2041</air_density>
+      <cp>0.09 0 0</cp><forward>0 1 0</forward><upward>0 0 1</upward>
+      <link_name>rotor_0</link_name>
+    </plugin>
+    <plugin filename="gz-sim-lift-drag-system" name="gz::sim::systems::LiftDrag">
+      <a0>0.3</a0><cla>4.2500</cla><cda>1.29</cda>
+      <cla_stall>-3.85</cla_stall><cda_stall>-0.9233</cda_stall><alpha_stall>1.4</alpha_stall>
+      <area>0.00154</area><air_density>1.2041</air_density>
+      <cp>-0.09 0 0</cp><forward>0 -1 0</forward><upward>0 0 1</upward>
+      <link_name>rotor_0</link_name>
+    </plugin>
+
+    <plugin filename="gz-sim-lift-drag-system" name="gz::sim::systems::LiftDrag">
+      <a0>0.3</a0><cla>4.2500</cla><cda>1.29</cda>
+      <cla_stall>-3.85</cla_stall><cda_stall>-0.9233</cda_stall><alpha_stall>1.4</alpha_stall>
+      <area>0.00154</area><air_density>1.2041</air_density>
+      <cp>0.09 0 0</cp><forward>0 1 0</forward><upward>0 0 1</upward>
+      <link_name>rotor_1</link_name>
+    </plugin>
+    <plugin filename="gz-sim-lift-drag-system" name="gz::sim::systems::LiftDrag">
+      <a0>0.3</a0><cla>4.2500</cla><cda>1.29</cda>
+      <cla_stall>-3.85</cla_stall><cda_stall>-0.9233</cda_stall><alpha_stall>1.4</alpha_stall>
+      <area>0.00154</area><air_density>1.2041</air_density>
+      <cp>-0.09 0 0</cp><forward>0 -1 0</forward><upward>0 0 1</upward>
+      <link_name>rotor_1</link_name>
+    </plugin>
+
+    <plugin filename="gz-sim-lift-drag-system" name="gz::sim::systems::LiftDrag">
+      <a0>0.3</a0><cla>4.2500</cla><cda>1.29</cda>
+      <cla_stall>-3.85</cla_stall><cda_stall>-0.9233</cda_stall><alpha_stall>1.4</alpha_stall>
+      <area>0.00154</area><air_density>1.2041</air_density>
+      <cp>0.09 0 0</cp><forward>0 -1 0</forward><upward>0 0 1</upward>
+      <link_name>rotor_2</link_name>
+    </plugin>
+    <plugin filename="gz-sim-lift-drag-system" name="gz::sim::systems::LiftDrag">
+      <a0>0.3</a0><cla>4.2500</cla><cda>1.29</cda>
+      <cla_stall>-3.85</cla_stall><cda_stall>-0.9233</cda_stall><alpha_stall>1.4</alpha_stall>
+      <area>0.00154</area><air_density>1.2041</air_density>
+      <cp>-0.09 0 0</cp><forward>0 1 0</forward><upward>0 0 1</upward>
+      <link_name>rotor_2</link_name>
+    </plugin>
+
+    <plugin filename="gz-sim-lift-drag-system" name="gz::sim::systems::LiftDrag">
+      <a0>0.3</a0><cla>4.2500</cla><cda>1.29</cda>
+      <cla_stall>-3.85</cla_stall><cda_stall>-0.9233</cda_stall><alpha_stall>1.4</alpha_stall>
+      <area>0.00154</area><air_density>1.2041</air_density>
+      <cp>0.09 0 0</cp><forward>0 -1 0</forward><upward>0 0 1</upward>
+      <link_name>rotor_3</link_name>
+    </plugin>
+    <plugin filename="gz-sim-lift-drag-system" name="gz::sim::systems::LiftDrag">
+      <a0>0.3</a0><cla>4.2500</cla><cda>1.29</cda>
+      <cla_stall>-3.85</cla_stall><cda_stall>-0.9233</cda_stall><alpha_stall>1.4</alpha_stall>
+      <area>0.00154</area><air_density>1.2041</air_density>
+      <cp>-0.09 0 0</cp><forward>0 1 0</forward><upward>0 0 1</upward>
+      <link_name>rotor_3</link_name>
+    </plugin>
+
+    <!-- ArduPilotPlugin điều khiển joint bằng lực -> cần ApplyJointForce -->
+    <plugin filename="gz-sim-apply-joint-force-system"
+            name="gz::sim::systems::ApplyJointForce">
+      <joint_name>rotor_0_joint</joint_name>
+    </plugin>
+    <plugin filename="gz-sim-apply-joint-force-system"
+            name="gz::sim::systems::ApplyJointForce">
+      <joint_name>rotor_1_joint</joint_name>
+    </plugin>
+    <plugin filename="gz-sim-apply-joint-force-system"
+            name="gz::sim::systems::ApplyJointForce">
+      <joint_name>rotor_2_joint</joint_name>
+    </plugin>
+    <plugin filename="gz-sim-apply-joint-force-system"
+            name="gz::sim::systems::ApplyJointForce">
+      <joint_name>rotor_3_joint</joint_name>
+    </plugin>
+
+    <!-- KHÔNG CÓ DetachableJoint Ở ĐÂY, VÀ ĐỪNG THÊM LẠI.
+         Quả cầu là vật RỜI nằm trong lồng bay_* của base_link, tì lên
+         bay1_latch. Nó rơi khi chốt quay quá 50 deg, không phải khi có bản
+         tin. Thêm DetachableJoint lại là quay về đúng cái lỗi cũ: cầu nhả
+         theo LỆNH chứ không theo GÓC CHỐT, sớm hơn thật 0.134 s = 0.67 m ở
+         5 m/s, và không một dòng log nào nói vì sao đạn rơi ngắn.
+
+         Cái mất khi bỏ nó: topic /firehawk/bay1/state (không ai dùng) và
+         việc cầu bị dính cứng vào drone lúc bay - giờ cầu lạch cạch trong
+         lồng như ngoài đời. -->
+
+    <!-- Chốt cơ khí quay theo lệnh servo. Số trên topic LÀ góc đặt (radian),
+         xem chú thích của kênh COMMAND trong ArduPilotPlugin ở dưới.
+
+         p_gain 8.0, KHÔNG PHẢI 2.0. Đo tư thế link bay1_latch từ
+         /world/firedrop_forest/dynamic_pose/info khi bắn lệnh pi rad:
+
+             p = 2.0   0->90 deg 0.238 s, nhưng 10% CUỐI BÒ MẤT 2.5 s
+                       (tới 178 deg ở giây thứ 2.98)
+             p = 8.0   0->90 deg 0.239 s, tới 178 deg ở 0.475 s, dừng 179.7 deg
+
+         Đoạn đầu hai bên giống hệt nhau vì cả hai đều bão hoà ở <velocity>
+         6.5 rad/s của khớp - đúng 0.159 s/60 deg, khớp servo thật. Khác nhau
+         ở đuôi: p thấp thì mô-men gần đích quá nhỏ, chốt bò tới nơi sau ba
+         giây, nhìn video như bị kẹt.
+
+         GIỜ ĐUÔI ĐÓ KHÔNG CÒN LÀ CHUYỆN THẨM MỸ: cầu rơi ở 56.7 deg, nằm
+         trong đoạn bão hoà velocity, nên p_gain không đổi thời điểm nhả -
+         nhưng i_gain thì có. Xem phần <i_gain> KHÔNG ĐƯỢC BỎ ở khối KHOANG
+         THẢ: thiếu nó thì mọi cú lệch do ma sát/va chạm nằm lại vĩnh viễn,
+         và chốt xuất phát từ một góc khác 0 mỗi lần thả.
+         i_max/i_min kẹp đúng bằng <effort> 1.96 N.m của khớp - để rộng hơn là
+         khâu tích phân đòi mô-men mà servo không có, chốt giật cục. -->
+    <plugin filename="gz-sim-joint-position-controller-system"
+            name="gz::sim::systems::JointPositionController">
+      <joint_name>bay1_latch_joint</joint_name>
+      <topic>/firehawk/bay1/servo</topic>
+      <p_gain>8.0</p_gain><i_gain>20.0</i_gain><d_gain>0.05</d_gain>
+      <i_max>1.96</i_max><i_min>-1.96</i_min>
+      <cmd_max>1.96</cmd_max><cmd_min>-1.96</cmd_min>
+    </plugin>
+
+    <!-- ==================================================================
+         ARDUPILOT SITL
+         ================================================================== -->
+    <plugin filename="ArduPilotPlugin" name="ArduPilotPlugin">
+      <fdm_addr>127.0.0.1</fdm_addr>
+      <fdm_port_in>9002</fdm_port_in>
+      <connectionTimeoutMaxCount>5</connectionTimeoutMaxCount>
+      <lock_step>1</lock_step>
+
+      <modelXYZToAirplaneXForwardZDown degrees="true">0 0 0 180 0 0</modelXYZToAirplaneXForwardZDown>
+      <gazeboXYZToNED degrees="true">0 0 0 180 0 90</gazeboXYZToNED>
+
+      <imuName>imu_link::imu_sensor</imuName>
+
+      <!-- p_gain 0.12: ĐIỀU KIỆN ỔN ĐỊNH SỐ HỌC, không phải sở thích.
+           Vòng vận tốc này tích phân hiện với bước vật lý h = 1 ms:
+               omega(k+1) = omega(k)*(1 - h*p/I) + (h*p/I)*omega_dat
+           nên bắt buộc  h * p_gain / izz < 2, và nên < 1 cho có biên.
+             izz cánh 10" = 1.613e-4  ->  tran p_gain = 0.16
+             iris goc     : 0.001 * 0.20 / 1.9e-4  = 1.05  on dinh
+             ban truoc day: 0.001 * 0.60 / 1.613e-4 = 3.72  PHAN KY
+             bay gio      : 0.001 * 0.12 / 1.613e-4 = 0.74  on dinh
+           Để 0.60 (số của khung cánh 21" cũ, izz gấp 18 lần) thì rotor
+           bang-bang giữa hai cực, lực đẩy 4 rotor loạn, DRONE LẬT NGỬA TRONG
+           0.24 s ngay khi vào ga cất cánh - và không có một dòng log lỗi nào.
+           ĐỔI CÁNH LÀ PHẢI TÍNH LẠI SỐ NÀY. test_model_sdf.py canh giúp.
+
+           Cái giá: sai số xác lập = mo-men can / p_gain = 1.25 / 0.12 = 10
+           rad/s trên 1450, tức thiếu 0.7% vòng tua -> 1.4% lực đẩy. Chấp nhận
+           được; MOT_HOVER_LEARN bù lại phần treo.
+
+           cmd_max 4.0 N.m, KHÔNG phải 12: cánh nhẹ 18 lần, để 12 thì đạt
+           vòng tua trong 21 ms - nhanh hơn cả ESC thật. 4.0 cho ~60 ms, đúng
+           dải ESC đa cánh, mà vẫn thừa so với mô-men cản 1.10 N.m lúc full ga. -->
+      <control channel="0">
+        <jointName>rotor_0_joint</jointName>
+        <useForce>1</useForce>
+        <multiplier>1450</multiplier>
+        <offset>0</offset>
+        <servo_min>1100</servo_min><servo_max>1900</servo_max>
+        <type>VELOCITY</type>
+        <p_gain>0.12</p_gain><i_gain>0</i_gain><d_gain>0</d_gain>
+        <i_max>0</i_max><i_min>0</i_min>
+        <cmd_max>4.0</cmd_max><cmd_min>-4.0</cmd_min>
+        <controlVelocitySlowdownSim>1</controlVelocitySlowdownSim>
+      </control>
+
+      <control channel="1">
+        <jointName>rotor_1_joint</jointName>
+        <useForce>1</useForce>
+        <multiplier>1450</multiplier>
+        <offset>0</offset>
+        <servo_min>1100</servo_min><servo_max>1900</servo_max>
+        <type>VELOCITY</type>
+        <p_gain>0.12</p_gain><i_gain>0</i_gain><d_gain>0</d_gain>
+        <i_max>0</i_max><i_min>0</i_min>
+        <cmd_max>4.0</cmd_max><cmd_min>-4.0</cmd_min>
+        <controlVelocitySlowdownSim>1</controlVelocitySlowdownSim>
+      </control>
+
+      <control channel="2">
+        <jointName>rotor_2_joint</jointName>
+        <useForce>1</useForce>
+        <multiplier>-1450</multiplier>
+        <offset>0</offset>
+        <servo_min>1100</servo_min><servo_max>1900</servo_max>
+        <type>VELOCITY</type>
+        <p_gain>0.12</p_gain><i_gain>0</i_gain><d_gain>0</d_gain>
+        <i_max>0</i_max><i_min>0</i_min>
+        <cmd_max>4.0</cmd_max><cmd_min>-4.0</cmd_min>
+        <controlVelocitySlowdownSim>1</controlVelocitySlowdownSim>
+      </control>
+
+      <control channel="3">
+        <jointName>rotor_3_joint</jointName>
+        <useForce>1</useForce>
+        <multiplier>-1450</multiplier>
+        <offset>0</offset>
+        <servo_min>1100</servo_min><servo_max>1900</servo_max>
+        <type>VELOCITY</type>
+        <p_gain>0.12</p_gain><i_gain>0</i_gain><d_gain>0</d_gain>
+        <i_max>0</i_max><i_min>0</i_min>
+        <cmd_max>4.0</cmd_max><cmd_min>-4.0</cmd_min>
+        <controlVelocitySlowdownSim>1</controlVelocitySlowdownSim>
+      </control>
+
+      <!-- SERVO9 (kênh 8, đánh số từ 0) -> servo chốt thả.
+           Trên Pixhawk 6C: SERVO1-4 = MAIN1-4 chạy 4 motor, SERVO9 = AUX1
+           (đầu ra FMU thứ nhất) - đúng chỗ cắm servo tải trên máy thật.
+
+           multiplier = pi CHỨ KHÔNG PHẢI 1, và đây là mấu chốt của cả cơ cấu.
+           ArduPilotPlugin tính  cmd = multiplier * (raw + offset)  với
+           raw = (pwm - servo_min)/(servo_max - servo_min) kẹp trong [0,1]
+           (ArduPilotPlugin.cc dòng 1677-1680). JointPositionController ở dưới
+           đọc số đó như GÓC ĐẶT tính bằng RADIAN. Nên:
+
+               PWM 1100 -> raw 0.0 -> 0.00 rad =   0 deg  KHOÁ
+               PWM 1500 -> raw 0.5 -> 1.57 rad =  90 deg
+               PWM 1900 -> raw 1.0 -> 3.14 rad = 180 deg  NHẢ
+
+           ĐÃ ĐO qua đúng đường thật (MAVLink DO_SET_SERVO -> ArduCopter ->
+           gói servo JSON -> plugin -> gz topic), drone đã arm: 1900 cho ra
+           3.14159, 1500 cho ra 1.570795. Không phải suy từ công thức.
+
+           BẪY LÚC ĐỌC TOPIC: ở 1100 us giá trị là 0.0, mà protobuf bỏ qua
+           trường mang giá trị mặc định -> `gz topic -e` in ra BẢN TIN RỖNG,
+           không có dòng "data:". Topic vẫn sống, chốt vẫn khoá; đừng tưởng
+           plugin chết.
+
+           Để multiplier = 1 (bản trước) thì hết tầm servo chỉ quay được 1 rad
+           = 57 deg. Đổi số này là phải đổi CẢ HAI chỗ khác, nếu không thì hỏng
+           câm, không một dòng log:
+             - <upper> của bay1_latch_joint  (chốt đứng ở giới hạn khớp)
+             - <match> của TriggeredPublisher trong world (KHÔNG BAO GIỜ NHẢ)
+           test_servo_chot_180_do canh cả ba.
+
+           type COMMAND chỉ phát tín hiệu ra topic, không tự lái joint; nhưng
+           jointName VẪN bắt buộc phải tồn tại, xem đầu file. -->
+      <control channel="8">
+        <jointName>bay1_latch_joint</jointName>
+        <useForce>0</useForce>
+        <multiplier>3.14159</multiplier>
+        <offset>0</offset>
+        <servo_min>1100</servo_min><servo_max>1900</servo_max>
+        <type>COMMAND</type>
+        <cmd_topic>/firehawk/bay1/servo</cmd_topic>
+      </control>
+    </plugin>
+
+    <!-- vị trí thật của drone: dùng để chấm điểm CEP, KHÔNG dùng cho thuật toán -->
+    <plugin filename="gz-sim-pose-publisher-system"
+            name="gz::sim::systems::PosePublisher">
+      <publish_link_pose>false</publish_link_pose>
+      <publish_model_pose>true</publish_model_pose>
+      <use_pose_vector_msg>false</use_pose_vector_msg>
+      <update_frequency>50</update_frequency>
+    </plugin>
+  </model>
+</sdf>

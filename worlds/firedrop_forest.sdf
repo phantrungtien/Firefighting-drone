@@ -1,0 +1,407 @@
+<?xml version="1.0" ?>
+<!--
+  firedrop_forest - cháy rừng/bãi cỏ 200x200 m.
+
+  Ổ CHÁY KHÔNG NẰM TRONG FILE NÀY. fire_manager (ROS 2) spawn chúng qua
+  service /world/firedrop_forest/create từ models/fire_source/model.sdf.template.
+  Lý do: <temperature> chỉ đọc lúc load nên muốn ổ cháy yếu đi thì phải
+  respawn -> để một nơi duy nhất giữ sự thật, tránh world và node lệch nhau.
+
+  Chạy:  gz sim -v4 -r worlds/firedrop_forest.sdf   (sau khi source setup.bash)
+-->
+<sdf version="1.9">
+  <world name="firedrop_forest">
+
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact"/>
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-particle-emitter-system" name="gz::sim::systems::ParticleEmitter"/>
+    <plugin filename="gz-sim-wind-effects-system" name="gz::sim::systems::WindEffects">
+      <force_approximation_scaling_factor>1</force_approximation_scaling_factor>
+    </plugin>
+
+    <!-- ==================================================================
+         KHÔNG CÓ TriggeredPublisher Ở ĐÂY NỮA, VÀ ĐỪNG THÊM LẠI.
+         World này từng có một cái nối /firehawk/bay1/servo (gz.msgs.Double,
+         góc chốt) sang /firehawk/bay1/detach (gz.msgs.Empty) cho
+         DetachableJoint. Cả hai đều đã bỏ: quả cầu giờ là vật RỜI tì lên
+         chốt trong lồng bay_* của models/firehawk_x4, rơi vì HÌNH HỌC khi
+         chốt quét quá 56.7 deg.
+
+         Nối lại là cầu nhả theo LỆNH chứ không theo GÓC CHỐT, tức quay về
+         một cơ cấu thả HOÀN HẢO không tồn tại ngoài đời - và không một dòng
+         log nào nói vì sao mọi con số CEP bỗng đẹp lên.
+         ================================================================== -->
+
+    <gravity>0 0 -9.81</gravity>
+    <magnetic_field>5.5645e-6 22.8758e-6 -42.3884e-6</magnetic_field>
+
+    <!-- 288 K (15 C) ở mực nước biển -> mật độ khí 1.2041 kg/m3, đúng con số
+         <air_density> mà LiftDrag của drone và Hydrodynamics của quả cầu dùng.
+         (Camera đã đổi sang RGB nên nền nhiệt không còn là ngưỡng phát hiện;
+         phần này giờ chỉ còn ảnh hưởng tới khí động.) -->
+    <atmosphere type="adiabatic">
+      <temperature>288.0</temperature>
+      <temperature_gradient>-0.0065</temperature_gradient>
+    </atmosphere>
+
+    <!-- gió: nguồn lệch đạn đạo. Đổi ở đây để thử độ bền của bộ giải. -->
+    <wind>
+      <linear_velocity>4.0 1.5 0</linear_velocity>
+    </wind>
+
+    <scene>
+      <ambient>0.5 0.5 0.5 1</ambient>
+      <background>0.55 0.62 0.72 1</background>
+      <grid>false</grid>
+      <sky/>
+    </scene>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 100 0 0 0</pose>
+      <diffuse>0.9 0.88 0.82 1</diffuse>
+      <specular>0.25 0.25 0.25 1</specular>
+      <attenuation><range>1000</range><constant>0.9</constant>
+        <linear>0.01</linear><quadratic>0.001</quadratic></attenuation>
+      <direction>-0.4 0.3 -0.9</direction>
+    </light>
+
+    <!-- địa hình 200x200 m; mặt đất tại gốc toạ độ nằm ở z = 0 -->
+    <include>
+      <uri>model://terrain</uri>
+    </include>
+
+    <!-- ==================================================================
+         XÁC NHÀ CHÁY - công trình, KHÔNG chứa lửa.
+         Ngọn lửa trong nhà là ổ cháy mức BLAZE do fire_manager spawn ở ĐÚNG
+         toạ độ này (tham số `fires`, mục đầu tiên). Hai nơi phải khớp nhau -
+         lệch thì cột lửa mọc ngoài bãi cỏ cạnh một cái nhà không cháy, và
+         không có một dòng log nào nói vì sao. test_fire_manager.py canh.
+
+         z = 1.15 lấy từ scripts/gen_assets.terrain_height(-30, 30), không
+         phải ước lượng. Móng dày 3 m nuốt hết chênh cao 1.1 m trong khuôn nhà.
+         ================================================================== -->
+    <include>
+      <uri>model://burning_house</uri>
+      <name>burning_house</name>
+      <pose>-30 30 1.15 0 0 0</pose>
+    </include>
+
+    <!-- ==================================================================
+         DRONE ZD650 + 1 QUẢ CẦU
+         Quả cầu là vật RỜI tì lên chốt, KHÔNG có khớp nào giữ nó. Nên hai
+         pose dưới đây phải đặt nó ĐÚNG mặt trên thanh chốt ngay từ lúc load:
+             drone   (0, 0, 0.32)   bàn chân ở -0.30 so với thân -> hở đất 2 cm
+             chốt    mặt trên ở -0.225 so với thân, cầu r = 0.075
+                     -> tâm cầu ở -0.15 so với thân -> (0, 0, 0.17)
+         Đặt thấp hơn = cầu rơi tự do rồi đập vào chốt lúc khởi động; cao hơn =
+         Gazebo tính ra xuyên nhau và bắn quả cầu ra khỏi lồng.
+         test_chot_do_duoc_qua_cau tính lại đúng phép cộng này.
+         ================================================================== -->
+    <!-- ĐÓM LỬA = mã ArUco id 0 (models/fire_marker). Trong bán kính 24 m quanh
+         gốc địa hình phẳng hẳn (z = 0), nên tấm mã nằm phẳng không bị đất cắt.
+         Ra ngoài vùng đó thì lấy z từ firedrop_sim/scripts/gen_assets.terrain_height. -->
+    <include>
+      <uri>model://fire_marker</uri>
+      <name>fire_marker</name>
+      <!-- trên nóc nhà cấp 4 (mái 4.00, vân ngói 4.02): đóm lửa trên mái, ground_range phải
+           đo khoảng cách tới MÁI chứ không phải tới cỏ quanh nhà -->
+      <pose>18 12 4.07 0 0 0</pose>
+    </include>
+
+    <include>
+      <uri>model://house_c4</uri>
+      <name>house_c4</name>
+      <pose>18 12 0 0 0 0</pose>
+    </include>
+
+    <!-- Vân mặt đất quanh đóm lửa cho ground_range (đo khoảng cách bằng camera 2D). Ra
+         ngoài bán kính 24 m địa hình lệch tới ~1 m: chỗ đất cao hơn thì che mất tấm này. -->
+    <include>
+      <uri>model://ground_patch</uri>
+      <name>ground_patch</name>
+      <pose>18 12 0 0 0 0</pose>
+    </include>
+
+    <!-- TOÀ NHÀ 100 m chắn đường bay nhà (0,0) -> đóm lửa (18,12), thử 18/10/2026: drone
+         KHÔNG có cảm biến vật cản, chỉ qua được nếu `alt` chọn trên GUI > 100 m. Khuôn
+         4.5..9.5 x 2.5..7.5: cách nhà 5 m, cách vòng kiểm tra (r 6 m quanh đóm lửa) ~3.6 m. -->
+    <model name="building_100m">
+      <static>true</static>
+      <pose>7 5 50 0 0 0</pose>
+      <link name="link">
+        <collision name="c"><geometry><box><size>5 5 100</size></box></geometry></collision>
+        <visual name="v">
+          <geometry><box><size>5 5 100</size></box></geometry>
+          <material><ambient>0.45 0.45 0.48 1</ambient><diffuse>0.6 0.6 0.62 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <include>
+      <uri>model://firehawk_x4</uri>
+      <name>firehawk</name>
+      <pose>0 0 0.32 0 0 0</pose>
+    </include>
+
+    <include>
+      <uri>model://elide_fireball</uri>
+      <name>fireball_1</name>
+      <pose>0 0 0.17 0 0 0</pose>
+    </include>
+
+    <!-- GUI: = ~/.gz/sim/8/gui.config mặc định + khung camera. Có <gui> trong world
+         thì Gazebo bỏ qua file mặc định, nên phải chép đủ các plugin kia. -->
+    <gui fullscreen="0">
+      <plugin filename="MinimalScene" name="3D View">
+          <gz-gui>
+              <title>3D View</title>
+              <property type="bool" key="showTitleBar">false</property>
+              <property type="string" key="state">docked</property>
+          </gz-gui>
+          <engine>ogre2</engine>
+          <scene>scene</scene>
+          <ambient_light>0.4 0.4 0.4</ambient_light>
+          <background_color>0.8 0.8 0.8</background_color>
+          <camera_pose>-12 -10 14 0 0.6 0.6</camera_pose>
+      </plugin>
+
+      <!-- Plugins that add functionality to the scene -->
+      <plugin filename="EntityContextMenuPlugin" name="Entity context menu">
+          <gz-gui>
+              <property key="state" type="string">floating</property>
+              <property key="width" type="double">5</property>
+              <property key="height" type="double">5</property>
+              <property key="showTitleBar" type="bool">false</property>
+          </gz-gui>
+      </plugin>
+
+      <plugin filename="GzSceneManager" name="Scene Manager">
+          <gz-gui>
+              <property key="resizable" type="bool">false</property>
+              <property key="width" type="double">5</property>
+              <property key="height" type="double">5</property>
+              <property key="state" type="string">floating</property>
+              <property key="showTitleBar" type="bool">false</property>
+          </gz-gui>
+      </plugin>
+
+      <plugin filename="InteractiveViewControl" name="Interactive view control">
+          <gz-gui>
+              <property key="resizable" type="bool">false</property>
+              <property key="width" type="double">5</property>
+              <property key="height" type="double">5</property>
+              <property key="state" type="string">floating</property>
+              <property key="showTitleBar" type="bool">false</property>
+          </gz-gui>
+      </plugin>
+
+      <plugin filename="CameraTracking" name="Camera Tracking">
+          <gz-gui>
+              <property key="resizable" type="bool">false</property>
+              <property key="width" type="double">5</property>
+              <property key="height" type="double">5</property>
+              <property key="state" type="string">floating</property>
+              <property key="showTitleBar" type="bool">false</property>
+          </gz-gui>
+      </plugin>
+
+      <plugin filename="MarkerManager" name="Marker manager">
+          <gz-gui>
+              <property key="resizable" type="bool">false</property>
+              <property key="width" type="double">5</property>
+              <property key="height" type="double">5</property>
+              <property key="state" type="string">floating</property>
+              <property key="showTitleBar" type="bool">false</property>
+          </gz-gui>
+      </plugin>
+
+      <plugin filename="SelectEntities" name="Select Entities">
+          <gz-gui>
+              <property key="resizable" type="bool">false</property>
+              <property key="width" type="double">5</property>
+              <property key="height" type="double">5</property>
+              <property key="state" type="string">floating</property>
+              <property key="showTitleBar" type="bool">false</property>
+          </gz-gui>
+      </plugin>
+
+      <plugin filename="Spawn" name="Spawn Entities">
+          <gz-gui>
+              <property key="resizable" type="bool">false</property>
+              <property key="width" type="double">5</property>
+              <property key="height" type="double">5</property>
+              <property key="state" type="string">floating</property>
+              <property key="showTitleBar" type="bool">false</property>
+          </gz-gui>
+      </plugin>
+
+      <plugin filename="VisualizationCapabilities" name="Visualization Capabilities">
+          <gz-gui>
+              <property key="resizable" type="bool">false</property>
+              <property key="width" type="double">5</property>
+              <property key="height" type="double">5</property>
+              <property key="state" type="string">floating</property>
+              <property key="showTitleBar" type="bool">false</property>
+          </gz-gui>
+      </plugin>
+
+      <!-- World control -->
+      <plugin filename="WorldControl" name="World control">
+          <gz-gui>
+              <title>World control</title>
+              <property type="bool" key="showTitleBar">false</property>
+              <property type="bool" key="resizable">false</property>
+              <property type="double" key="height">72</property>
+              <property type="double" key="z">1</property>
+              <property type="string" key="state">floating</property>
+              <anchors target="3D View">
+                  <line own="left" target="left"/>
+                  <line own="bottom" target="bottom"/>
+              </anchors>
+          </gz-gui>
+          <play_pause>true</play_pause>
+          <step>true</step>
+          <start_paused>true</start_paused>
+          <use_event>true</use_event>
+      </plugin>
+
+      <!-- World statistics -->
+      <plugin filename="WorldStats" name="World stats">
+          <gz-gui>
+              <title>World stats</title>
+              <property type="bool" key="showTitleBar">false</property>
+              <property type="bool" key="resizable">false</property>
+              <property type="double" key="height">110</property>
+              <property type="double" key="width">290</property>
+              <property type="double" key="z">1</property>
+              <property type="string" key="state">floating</property>
+              <anchors target="3D View">
+                  <line own="right" target="right"/>
+                  <line own="bottom" target="bottom"/>
+              </anchors>
+          </gz-gui>
+          <sim_time>true</sim_time>
+          <real_time>true</real_time>
+          <real_time_factor>true</real_time_factor>
+          <iterations>true</iterations>
+      </plugin>
+
+      <!-- Insert simple shapes -->
+      <plugin filename="Shapes" name="Shapes">
+          <gz-gui>
+              <property key="resizable" type="bool">false</property>
+              <property key="x" type="double">0</property>
+              <property key="y" type="double">0</property>
+              <property key="width" type="double">300</property>
+              <property key="height" type="double">50</property>
+              <property key="state" type="string">floating</property>
+              <property key="showTitleBar" type="bool">false</property>
+              <property key="cardBackground" type="string">#666666</property>
+          </gz-gui>
+      </plugin>
+
+      <!-- Insert lights -->
+      <plugin filename="Lights" name="Lights">
+          <gz-gui>
+              <property key="resizable" type="bool">false</property>
+              <property key="x" type="double">300</property>
+              <property key="y" type="double">0</property>
+              <property key="width" type="double">150</property>
+              <property key="height" type="double">50</property>
+              <property key="state" type="string">floating</property>
+              <property key="showTitleBar" type="bool">false</property>
+              <property key="cardBackground" type="string">#666666</property>
+          </gz-gui>
+      </plugin>
+
+      <!-- Translate / rotate -->
+      <plugin filename="TransformControl" name="Transform control">
+          <gz-gui>
+              <property key="resizable" type="bool">false</property>
+              <property key="x" type="double">0</property>
+              <property key="y" type="double">50</property>
+              <property key="width" type="double">250</property>
+              <property key="height" type="double">50</property>
+              <property key="state" type="string">floating</property>
+              <property key="showTitleBar" type="bool">false</property>
+              <property key="cardBackground" type="string">#777777</property>
+          </gz-gui>
+      </plugin>
+
+      <!-- Screenshot -->
+      <plugin filename="Screenshot" name="Screenshot">
+          <gz-gui>
+              <property key="resizable" type="bool">false</property>
+              <property key="x" type="double">250</property>
+              <property key="y" type="double">50</property>
+              <property key="width" type="double">50</property>
+              <property key="height" type="double">50</property>
+              <property key="state" type="string">floating</property>
+              <property key="showTitleBar" type="bool">false</property>
+              <property key="cardBackground" type="string">#777777</property>
+          </gz-gui>
+      </plugin>
+
+      <!-- Copy/Paste -->
+      <plugin filename="CopyPaste" name="CopyPaste">
+          <gz-gui>
+              <property key="resizable" type="bool">false</property>
+              <property key="x" type="double">300</property>
+              <property key="y" type="double">50</property>
+              <property key="width" type="double">100</property>
+              <property key="height" type="double">50</property>
+              <property key="state" type="string">floating</property>
+              <property key="showTitleBar" type="bool">false</property>
+              <property key="cardBackground" type="string">#777777</property>
+          </gz-gui>
+      </plugin>
+
+      <!-- Inspector -->
+      <plugin filename="ComponentInspector" name="Component inspector">
+          <gz-gui>
+              <property type="bool" key="showTitleBar">false</property>
+              <property type="string" key="state">docked</property>
+          </gz-gui>
+      </plugin>
+
+      <!-- Entity tree -->
+      <plugin filename="EntityTree" name="Entity tree">
+          <gz-gui>
+              <property type="bool" key="showTitleBar">false</property>
+              <property type="string" key="state">docked</property>
+          </gz-gui>
+      </plugin>
+      <!-- CAMERA NADIR TRỰC TIẾP: đúng khung hình marker_detector đọc (/rgb/image).
+           Gazebo chỉ render camera khi có người subscribe - khung này là một người
+           như vậy, nên mở GUI tốn thêm render; chạy headless (-s) thì không có. -->
+      <plugin filename="ImageDisplay" name="Camera nadir">
+          <gz-gui>
+              <title>Camera nadir (/rgb/image)</title>
+              <property type="string" key="state">floating</property>
+              <property type="double" key="width">420</property>
+              <property type="double" key="height">350</property>
+              <property type="double" key="z">2</property>
+              <anchors target="3D View">
+                  <line own="left" target="left"/>
+                  <line own="top" target="top"/>
+              </anchors>
+          </gz-gui>
+          <topic>/rgb/image</topic>
+          <topic_picker>false</topic_picker>
+      </plugin>
+    </gui>
+
+  </world>
+</sdf>

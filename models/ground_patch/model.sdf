@@ -1,0 +1,29 @@
+<?xml version="1.0" ?>
+<!--
+  Vân mặt đất kiểu ảnh rừng chụp từ trên cao, 50x34 m, sinh bằng scripts/gen_ground_patch.py.
+  Địa hình gốc gần như trơn: ground_range (khoảng cách bằng độ nở ảnh, thay lidar) không bắt
+  được điểm nào. Chỉ visual: bóng rơi xuyên qua, chạm địa hình thật ngay bên dưới.
+
+  Cao 3 cm trên đất, mã ArUco đặt cao hơn nữa (world: z 0.07): cách nhau < ~1 cm là chớp
+  nhoáng (z-fighting) khi nhìn từ 120 m, và ground_range bám nhầm vào chỗ nhấp nháy.
+-->
+<sdf version="1.9">
+  <model name="ground_patch">
+    <static>true</static>
+    <link name="link">
+      <visual name="v">
+        <pose>0 0 0.03 0 0 0</pose>
+        <geometry><plane><normal>0 0 1</normal><size>50 34</size></plane></geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+          <pbr><metal>
+            <albedo_map>model://ground_patch/materials/textures/ground.jpg</albedo_map>
+            <metalness>0</metalness>
+            <roughness>1</roughness>
+          </metal></pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

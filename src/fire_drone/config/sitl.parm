@@ -1,0 +1,12 @@
+# Tham số nạp vào SITL: sim_vehicle.py -w --add-param-file=<file này>
+#
+# ArduPilot KHÔNG tự gửi stream telemetry - phải có ai xin. MAVProxy xin hộ;
+# nối thẳng MAVROS vào cổng 5760 (SERIAL0) mà thiếu SR0_* thì
+# /mavros/local_position/pose IM LẶNG và node kẹt mãi ở bước chờ pose.
+# Drone thật: đặt SRx_* tương tự cho cổng SERIAL nối companion computer.
+SR0_POSITION     20
+SR0_EXTRA1       20
+SR0_EXTRA2       10
+SR0_EXT_STAT     5
+SR0_RAW_SENS     2
+SR0_RC_CHAN      2

@@ -1,0 +1,42 @@
+<?xml version="1.0" ?>
+<!--
+  Địa hình 200x200 m, cao độ -2.6..8.8 m, sinh bởi scripts/gen_assets.py.
+  Mặt đất tại gốc toạ độ (0,0) nằm đúng ở z = 0; vùng tâm bán kính ~25 m đã
+  được san phẳng -> chỗ cất/hạ cánh.
+
+  ⚠ VÌ SAO LÀ MESH CHỨ KHÔNG PHẢI <heightmap>:
+  Trong gz-sim 8 (Harmonic), chỉ cần world có một <heightmap> là CAMERA NHIỆT
+  ngừng nhìn thấy mọi vật thể gán <temperature>. Ảnh nhiệt vẫn ra đều đặn,
+  vẫn đúng nền 288 K, chỉ là mọi ổ cháy biến mất - và không có một dòng lỗi
+  nào. Đã đo bằng thực nghiệm: cùng một dãy hộp nóng đặt cách 0/4/8 m, bỏ
+  heightmap thì hiện đủ, để lại thì mất sạch.
+  Mesh cho địa hình gồ ghề y hệt mà camera nhiệt vẫn hoạt động.
+
+  (heightmap.png vẫn được sinh ra và giữ lại để tham chiếu/so sánh, nhưng
+   world không dùng tới nó.)
+-->
+<sdf version="1.9">
+  <model name="terrain">
+    <static>true</static>
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+          <mesh><uri>terrain.obj</uri></mesh>
+        </geometry>
+        <surface>
+          <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <geometry>
+          <mesh><uri>terrain.obj</uri></mesh>
+        </geometry>
+        <material>
+          <ambient>0.26 0.28 0.15 1</ambient>
+          <diffuse>0.34 0.38 0.19 1</diffuse>
+          <specular>0.02 0.02 0.02 1</specular>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

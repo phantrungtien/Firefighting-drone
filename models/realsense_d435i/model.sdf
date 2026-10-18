@@ -1,0 +1,386 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <!--
+    ===========================================================================
+    NGUỒN: chép từ ~/gz_ws/src/drone_vision/models/realsense_d435i (dự án bay
+    qua vòng). ĐỔI ĐÚNG MỘT CHỖ so với bản gốc:
+
+      bỏ <plugin GstCameraPlugin> ở sensor color.
+      Vì sao: plugin đó tự SUBSCRIBE vào camera color để đẩy H.264 ra UDP:5600
+      cho QGroundControl. firedrop không có QGC, không có sink nào đọc cổng
+      5600 - nhưng camera trong gz CHỈ render khi có người nghe, nên để plugin
+      lại là bắt render 848x480 @30 Hz suốt phiên chạy cho không ai xem. Sim
+      này đã chạy ~0.5 RTF vì bước vật lý 1 ms; đừng cho thêm gánh.
+
+    Mọi thứ khác giữ NGUYÊN BẢN, kể cả infra1/infra2 (không tốn gì khi không ai
+    subscribe) và IMU của camera. Sửa gì ở đây thì sửa cả bên gz_ws, đừng để
+    hai bản lệch nhau.
+    ===========================================================================
+
+    Intel RealSense D435i.
+
+    Every offset, dimension and mass below is taken from Intel's own URDF
+    (realsense2_description/urdf/_d435.urdf.xacro and _d435i_imu_modules.urdf.xacro),
+    not from rounded catalogue figures.
+
+    camera_link IS the depth optical origin, which IS the left IR imager
+    (Intel sets cam_depth_to_infra1_offset = 0). Body frame convention here is
+    Gazebo's: +X forward (out of the lens), +Y left, +Z up.
+
+      right IR   y = -0.050   (50 mm stereo baseline)
+      left IR    y =  0       (== depth == camera_link)
+      color      y = +0.015   <- depth and color do NOT share an optical centre
+      IMU        (-0.01174, -0.00552, 0.0051)
+
+    That 15 mm color offset is deliberate and load-bearing: on real hardware a
+    depth pixel does not map to the RGB pixel of the same index. Anything that
+    fuses the two must align them (rs2::align, or project through the extrinsic).
+    Leaving the offset in means code written against this sim still works on the
+    real D435i instead of being systematically wrong in one axis.
+  -->
+  <model name="realsense_d435i">
+    <!--
+      Frames are named after realsense-ros so this model is a drop-in for the
+      real driver: the same topic names carrying the same frame_ids.
+
+      Each stream also reports where it ACTUALLY is. If depth and color both
+      published one frame_id, every consumer would read that as "same optical
+      centre" and fuse them with no alignment - the free lunch that does not
+      exist on hardware.
+
+      Two frames per stream, exactly as the real driver has:
+        *_frame          body convention   X forward, Y left,  Z up
+        *_optical_frame  ROS optical       Z forward, X right, Y down
+      The messages are stamped with the OPTICAL frame, because that is what the
+      real driver stamps and what the camera_info K matrix is expressed in:
+      back-projecting a pixel with K lands you in the optical frame, not the body
+      frame. (Measured, not assumed - see the WARNING on the depth sensor.)
+    -->
+    <frame name="d435i_depth_frame" attached_to="camera_link">
+      <pose relative_to="camera_link">0 0 0 0 0 0</pose>
+    </frame>
+    <frame name="d435i_depth_optical_frame" attached_to="d435i_depth_frame">
+      <pose relative_to="d435i_depth_frame">0 0 0 -1.5707963 0 -1.5707963</pose>
+    </frame>
+
+    <frame name="d435i_color_frame" attached_to="camera_link">
+      <pose relative_to="camera_link">0 0.015 0 0 0 0</pose>
+    </frame>
+    <frame name="d435i_color_optical_frame" attached_to="d435i_color_frame">
+      <pose relative_to="d435i_color_frame">0 0 0 -1.5707963 0 -1.5707963</pose>
+    </frame>
+
+    <!-- infra1 IS the depth origin (Intel: cam_depth_to_infra1_offset = 0).
+         infra2 is one 50 mm baseline to the right. NOT +/-25 mm about
+         camera_link: that would put the left imager 25 mm away from the depth
+         origin and quietly break the depth<->stereo agreement you would rely on
+         to check a VIO's triangulation. -->
+    <frame name="d435i_infra1_frame" attached_to="camera_link">
+      <pose relative_to="camera_link">0 0 0 0 0 0</pose>
+    </frame>
+    <frame name="d435i_infra1_optical_frame" attached_to="d435i_infra1_frame">
+      <pose relative_to="d435i_infra1_frame">0 0 0 -1.5707963 0 -1.5707963</pose>
+    </frame>
+    <frame name="d435i_infra2_frame" attached_to="camera_link">
+      <pose relative_to="camera_link">0 -0.050 0 0 0 0</pose>
+    </frame>
+    <frame name="d435i_infra2_optical_frame" attached_to="d435i_infra2_frame">
+      <pose relative_to="d435i_infra2_frame">0 0 0 -1.5707963 0 -1.5707963</pose>
+    </frame>
+
+    <frame name="d435i_imu_frame" attached_to="camera_link">
+      <pose relative_to="camera_link">-0.01174 -0.00552 0.0051 0 0 0</pose>
+    </frame>
+    <frame name="d435i_imu_optical_frame" attached_to="d435i_imu_frame">
+      <pose relative_to="d435i_imu_frame">0 0 0 -1.5707963 0 -1.5707963</pose>
+    </frame>
+
+    <link name="camera_link">
+      <inertial>
+        <!-- Module is 25.05 x 90 x 25 mm, 72 g. Centre of the box sits back and
+             right of the left IR imager, hence the offset pose. -->
+        <pose>-0.0106 -0.0175 0 0 0 0</pose>
+        <mass>0.072</mass>
+        <inertia>
+          <ixx>5.235e-05</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>7.513e-06</iyy>
+          <iyz>0</iyz>
+          <izz>5.236e-05</izz>
+        </inertia>
+      </inertial>
+
+      <visual name="body_visual">
+        <pose>-0.0106 -0.0175 0 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.02505 0.090 0.025</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.15 0.15 0.15 1</ambient>
+          <diffuse>0.2 0.2 0.2 1</diffuse>
+          <specular>0.4 0.4 0.4 1</specular>
+        </material>
+      </visual>
+
+      <collision name="body_collision">
+        <pose>-0.0106 -0.0175 0 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.02505 0.090 0.025</size>
+          </box>
+        </geometry>
+      </collision>
+
+      <!--
+        DEPTH (stereo IR pair, rectified by the ASIC before it leaves the camera).
+
+        848x480 is the D435i's native depth profile, and the resolution is not a
+        free choice: Gazebo derives vertical FOV from horizontal_fov + aspect
+        ratio. At 848x480, hfov 87 deg gives vfov 56.5 deg, which lands inside
+        the datasheet's 58 +/- 3 deg. At 640x480 the same hfov would give 70.9
+        deg - 13 deg wrong - and every back-projection along the image Y axis
+        would inherit that error.
+
+        Depth is already rectified on-camera, so no <distortion> here. That is
+        real, not a shortcut.
+      -->
+      <!--
+        WARNING - Gazebo emits this sensor's two products in DIFFERENT frame
+        conventions, under one frame_id. Measured on this model:
+
+          depth image + camera_info K  ->  back-projects to OPTICAL (Z forward)
+          the /points cloud Gazebo adds ->  BODY (X forward)
+
+        Verified: pixel (679,361) at 0.719 m gives K-back-projection
+        (0.410, 0.195, 0.719)_optical, and Gazebo's own cloud reports
+        (0.719, -0.408, -0.193) - the same point, rotated.
+
+        The frame_id below is the OPTICAL frame, matching the real driver and
+        matching K. So do NOT bridge /points straight through: it is body-frame
+        data wearing an optical-frame label, and it will land 90 deg out. Build
+        the cloud the way the real stack does, from depth + camera_info:
+
+          ros2 run depth_image_proc point_cloud_xyz_node ...
+
+        That gives an optical-frame cloud that agrees with the hardware.
+      -->
+      <sensor name="depth" type="depth_camera">
+        <gz_frame_id>d435i_depth_optical_frame</gz_frame_id>
+        <pose>0 0 0 0 0 0</pose>
+        <!-- Namespaced like realsense-ros. It must stay namespaced: Gazebo derives
+             camera_info from the topic's parent, so a bare /d435i/depth and
+             /d435i/color would BOTH publish to /d435i/camera_info and one set of
+             intrinsics would silently win. -->
+        <topic>/d435i/depth/image_rect_raw</topic>
+        <always_on>1</always_on>
+        <update_rate>30</update_rate>
+        <camera>
+          <horizontal_fov>1.518436</horizontal_fov>
+          <image>
+            <width>848</width>
+            <height>480</height>
+            <format>R_FLOAT32</format>
+          </image>
+          <clip>
+            <!-- near = min-Z at 848x480 (~0.195 m); far = datasheet max range. -->
+            <near>0.2</near>
+            <far>10.0</far>
+          </clip>
+          <noise>
+            <!--
+              Gazebo only offers a CONSTANT stddev. The real D435i error grows
+              with the square of range: sigma_Z = Z^2 * sigma_disp / (f * B),
+              with f = 446.8 px at this profile, B = 0.05 m, sigma_disp ~ 0.08 px.
+              The 0.014 below is that formula evaluated at Z = 2 m (~0.7%, inside
+              the "<2% at 2 m" spec). It is right at 2 m and optimistic beyond it.
+              If range accuracy matters to your algorithm, model the Z^2 term in
+              code - the SDF cannot express it.
+            -->
+            <type>gaussian</type>
+            <mean>0</mean>
+            <stddev>0.014</stddev>
+          </noise>
+        </camera>
+      </sensor>
+
+      <!--
+        INFRARED STEREO PAIR - what VIO/SLAM actually consumes (VINS-Fusion,
+        ORB-SLAM3 stereo run on infra1+infra2, never on RGB).
+
+        These are the imagers the depth is computed FROM, so they carry the DEPTH
+        FOV (87 deg), not the narrower color FOV. infra1 sits exactly on the depth
+        origin; infra2 one 50 mm baseline to its right.
+
+        One honest gap: a real D435i sprays an IR dot pattern over the scene, and
+        the sim has no emitter. But VIO users switch the emitter OFF anyway (the
+        dots wreck feature tracking), so sim IR matches the configuration you
+        would actually fly. It does NOT match the emitter-on images.
+
+        THROTTLED TO 5 Hz. What that buys, and what it does not:
+
+          depth arriving in ROS   16.5 Hz -> 21.7 Hz   (+32%)
+          sim real-time factor    0.54    -> 0.57      (i.e. nothing)
+
+        Nothing consumes infra today - gate_detect flies on colour + depth - yet infra1
+        still rendered every frame, because the world's ImageDisplay panel subscribes to
+        it (a Gazebo camera renders only while something listens, and the panel IS that
+        listener). infra2 rendered for no one at all. Throttling them hands that render
+        budget back to depth, which the controller does eat. That part is worth having.
+
+        But it does NOT make the sim keep up, and it would be wrong to claim otherwise.
+        Measured on this machine: with ZERO cameras subscribed the RTF is already 0.53,
+        and adding all three back does not move it. The ceiling is the physics step -
+        <max_step_size>0.001</max_step_size>, i.e. 1000 steps a second, which this box
+        cannot do in real time. Same 0.51-0.56 with ArduPilot SITL attached and lock_step
+        running, so it is not a headless artefact either.
+
+        That half-speed sim is the thing that drags MAVLink timesync out past a second
+        and makes MAVROS's parameter download time out, retry, and occasionally die on
+        the duplicate replies. Throttling the cameras does not fix it; only the step size
+        would, and that is ArduPilot's FDM rate, not a knob to turn casually.
+
+        Put these back to 30 the day you actually run VIO on them (VINS-Fusion,
+        ORB-SLAM3) - and drop the ImageDisplay panels in gates_course.sdf if you need
+        the budget back.
+      -->
+      <sensor name="infra1" type="camera">
+        <gz_frame_id>d435i_infra1_optical_frame</gz_frame_id>
+        <pose>0 0 0 0 0 0</pose>
+        <topic>/d435i/infra1/image_rect_raw</topic>
+        <always_on>1</always_on>
+        <update_rate>5</update_rate>
+        <camera>
+          <horizontal_fov>1.518436</horizontal_fov>
+          <image>
+            <width>848</width>
+            <height>480</height>
+            <format>L8</format>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>1000.0</far>
+          </clip>
+          <noise>
+            <type>gaussian</type>
+            <mean>0</mean>
+            <stddev>0.007</stddev>
+          </noise>
+        </camera>
+      </sensor>
+
+      <sensor name="infra2" type="camera">
+        <gz_frame_id>d435i_infra2_optical_frame</gz_frame_id>
+        <pose>0 -0.050 0 0 0 0</pose>
+        <topic>/d435i/infra2/image_rect_raw</topic>
+        <always_on>1</always_on>
+        <update_rate>5</update_rate>
+        <camera>
+          <horizontal_fov>1.518436</horizontal_fov>
+          <image>
+            <width>848</width>
+            <height>480</height>
+            <format>L8</format>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>1000.0</far>
+          </clip>
+          <noise>
+            <type>gaussian</type>
+            <mean>0</mean>
+            <stddev>0.007</stddev>
+          </noise>
+        </camera>
+      </sensor>
+
+      <!--
+        COLOR. 69 x 42 deg per datasheet; at 848x480 the derived vfov is 42.5 deg.
+        Offset +15 mm in Y from depth - see the header comment.
+      -->
+      <sensor name="color" type="camera">
+        <gz_frame_id>d435i_color_optical_frame</gz_frame_id>
+        <pose>0 0.015 0 0 0 0</pose>
+        <topic>/d435i/color/image_raw</topic>
+        <always_on>1</always_on>
+        <update_rate>30</update_rate>
+        <camera>
+          <horizontal_fov>1.204277</horizontal_fov>
+          <image>
+            <width>848</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>1000.0</far>
+          </clip>
+          <noise>
+            <type>gaussian</type>
+            <mean>0</mean>
+            <stddev>0.007</stddev>
+          </noise>
+          <!--
+            The RGB lens IS distorted (depth is not), but the coefficients are
+            per-unit calibration data, not a spec number - writing plausible
+            ones here would fake a precision this file does not have. Read your
+            own unit's with:
+                rs-enumerate-devices -c
+            and paste them in:
+            <distortion>
+              <k1>..</k1> <k2>..</k2> <k3>..</k3> <p1>..</p1> <p2>..</p2>
+              <center>0.5 0.5</center>
+            </distortion>
+          -->
+        </camera>
+
+        <!-- GstCameraPlugin (UDP:5600 -> QGC) đã bỏ - xem đầu file. -->
+      </sensor>
+
+      <!--
+        IMU - the "i" in D435i. Bosch BMI055, mounted off the optical axis.
+        Gazebo has one IMU sensor for both parts; the real BMI055 samples gyro at
+        200/400 Hz and accel at 63/250 Hz independently.
+
+        stddev = noise density * sqrt(bandwidth), bandwidth = 200/2 = 100 Hz:
+          gyro  0.014 deg/s/sqrt(Hz) = 2.443e-4 rad/s/sqrt(Hz) -> 2.44e-3 rad/s
+          accel 150 ug/sqrt(Hz)      = 1.471e-3 m/s^2/sqrt(Hz) -> 1.47e-2 m/s^2
+
+        bias_stddev is the BMI055 datasheet zero-offset (gyro +/-1 deg/s, accel
+        +/-70 mg). Intel does NOT factory-trim this - it is why rs-imu-calibration.py
+        exists. If your unit has been calibrated, zero these two out.
+      -->
+      <!--
+        The pose is ROTATED into the optical convention, and that is deliberate.
+        A camera cannot be rotated this way (it would then stare off to the side
+        - Gazebo cameras look down their own +X), but an IMU has no view
+        direction: rotating it only changes the frame its vectors come out in.
+        librealsense reports accel/gyro in the optical convention (X right,
+        Y down, Z forward), so rotating the sensor makes the sim publish exactly
+        what the hardware publishes. Level and stationary, accel therefore reads
+        about (0, -9.81, 0), not (0, 0, +9.81).
+      -->
+      <sensor name="imu" type="imu">
+        <gz_frame_id>d435i_imu_optical_frame</gz_frame_id>
+        <pose>-0.01174 -0.00552 0.0051 -1.5707963 0 -1.5707963</pose>
+        <topic>/d435i/imu</topic>
+        <always_on>1</always_on>
+        <update_rate>200</update_rate>
+        <imu>
+          <angular_velocity>
+            <x><noise type="gaussian"><mean>0</mean><stddev>2.44e-3</stddev><bias_mean>0</bias_mean><bias_stddev>1.745e-2</bias_stddev></noise></x>
+            <y><noise type="gaussian"><mean>0</mean><stddev>2.44e-3</stddev><bias_mean>0</bias_mean><bias_stddev>1.745e-2</bias_stddev></noise></y>
+            <z><noise type="gaussian"><mean>0</mean><stddev>2.44e-3</stddev><bias_mean>0</bias_mean><bias_stddev>1.745e-2</bias_stddev></noise></z>
+          </angular_velocity>
+          <linear_acceleration>
+            <x><noise type="gaussian"><mean>0</mean><stddev>1.47e-2</stddev><bias_mean>0</bias_mean><bias_stddev>6.865e-1</bias_stddev></noise></x>
+            <y><noise type="gaussian"><mean>0</mean><stddev>1.47e-2</stddev><bias_mean>0</bias_mean><bias_stddev>6.865e-1</bias_stddev></noise></y>
+            <z><noise type="gaussian"><mean>0</mean><stddev>1.47e-2</stddev><bias_mean>0</bias_mean><bias_stddev>6.865e-1</bias_stddev></noise></z>
+          </linear_acceleration>
+        </imu>
+      </sensor>
+    </link>
+  </model>
+</sdf>

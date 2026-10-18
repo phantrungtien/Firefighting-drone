@@ -1,0 +1,16 @@
+# Make MAVROS publish the map -> base_link TRANSFORM, not just the pose topic.
+#
+# apm_config.yaml (MAVROS's own, which mavros_apm.launch.py loads) ships
+# `tf.send: false`. With it off, /mavros/local_position/pose still streams, so a
+# controller that only reads the topic works fine and nothing looks wrong -- but
+# the TF tree has no link between `map` and `base_link`. Every node that turns
+# CAMERA data into map coordinates (gate_tracker, voxel_mapper) then fails its
+# lookup with "two or more unconnected trees" and silently drops all input.
+#
+# The node-scoped `/**/local_position:` form is load-bearing: MAVROS 2 runs each
+# plugin as its OWN node, so a `local_position.tf.send` parameter handed to
+# mavros_node never reaches the plugin. It has to be addressed by node name, and
+# this file must be listed AFTER apm_config.yaml so it wins.
+/**/local_position:
+  ros__parameters:
+    tf.send: true

@@ -1,0 +1,60 @@
+# MAVROS plugin list for the SITL launches. This is mavros/launch/apm_pluginlists.yaml
+# with ONE addition: `param` is denied.
+#
+# WHY DENY THE PARAM PLUGIN
+#
+# MAVROS dies outright, mid-run, with:
+#
+#     terminate called after throwing an instance of 'std::future_error'
+#       what():  std::future_error: Promise already satisfied
+#
+# The param plugin downloads all ~400 FCU parameters on connect. When a reply is slow it
+# re-requests, ArduPilot answers both the original and the retry, and the plugin fulfils
+# the same std::promise twice -- which is an abort(), not an exception you can catch. The
+# log tells the whole story just before it goes:
+#
+#     PR: request param #393 timeout, retries left 2, and 375 params still missing
+#     PR: got an unsolicited param value idx=397, not resetting retries count 3   (x N)
+#
+# The replies are slow because the sim runs at about half real time (RTF ~0.53 -- set by
+# the 1000 Hz physics step, NOT by the cameras; measured), which stretches MAVLink
+# timesync RTT past a second. Fixing that means changing ArduPilot's FDM rate, so instead
+# we remove the plugin that cannot survive it.
+#
+# NOTHING HERE NEEDS IT. The missions use arming, set_mode, takeoff, setpoint_raw and
+# local_position -- the sys_status, command, setpoint_raw and local_position plugins. The
+# param plugin only serves /mavros/param/*, which nothing in this repo calls. Denying it
+# costs those services and nothing else.
+#
+# If you DO need /mavros/param/*, drop `param` from the list below and accept the crash
+# risk, or set it from a GCS (Mission Planner / QGroundControl) instead.
+/**:
+  ros__parameters:
+    plugin_denylist:
+      # crashes on duplicate PARAM_VALUE replies under a slow sim -- see above
+      - param
+
+      # SAME abort, different plugin -- observed 2026-07-18:
+      #   RP: seems GCS requesting mission
+      #   RP: scheduling pull after GCS is done
+      #   terminate called ... std::future_error: Promise already satisfied
+      # The mission-ish plugins share the promise-per-request pattern that the
+      # param plugin dies from, so a slow sim kills them the same way. Nothing in
+      # this repo flies a stored mission -- the missions are all GUIDED setpoint
+      # streams -- so denying the three costs nothing we use.
+      - rallypoint
+      - waypoint
+      - geofence
+
+      # common
+      - actuator_control
+      - ftp
+      - hil
+      # extras
+      - altitude
+      - debug_value
+      - image_pub
+      - px4flow
+      - vibration
+      - vision_speed_estimate
+      - wheel_odometry

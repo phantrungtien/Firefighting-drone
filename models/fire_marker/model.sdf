@@ -1,0 +1,37 @@
+<?xml version="1.0" ?>
+<!--
+  "Đóm lửa" giả: ArUco DICT_4X4_50, id 0. Tấm 2.0 m, vùng mã đen 1.5 m
+  (= marker_size của marker_detector - đổi một bên là PHẢI đổi bên kia, lệch
+  thì cao độ mục tiêu sai theo đúng tỉ lệ đó).
+
+  Ảnh sinh bằng:
+    d = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+    img = cv2.copyMakeBorder(cv2.aruco.generateImageMarker(d, 0, 600),
+                             100, 100, 100, 100, cv2.BORDER_CONSTANT, value=255)
+
+  Ở 110 m x1 mã này ~9 px, không đọc được - cố ý: đó là ca fire_mission phải zoom
+  (x2 ~19 px). Cần >= ~25 px mới đọc chắc (đo 18/10/2026).
+
+  Chỉ có visual, không collision: bóng rơi trúng địa hình ngay bên dưới.
+  z = 0.01 tránh nhấp nháy với mặt đất.
+-->
+<sdf version="1.9">
+  <model name="fire_marker">
+    <static>true</static>
+    <link name="link">
+      <visual name="tag">
+        <pose>0 0 0.01 0 0 0</pose>
+        <geometry><plane><normal>0 0 1</normal><size>2 2</size></plane></geometry>
+        <material>
+          <ambient>1 1 1 1</ambient>
+          <diffuse>1 1 1 1</diffuse>
+          <pbr><metal>
+            <albedo_map>model://fire_marker/materials/textures/aruco_4x4_id0.png</albedo_map>
+            <metalness>0</metalness>
+            <roughness>1</roughness>
+          </metal></pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

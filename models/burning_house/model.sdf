@@ -1,0 +1,276 @@
+<?xml version="1.0" ?>
+<!--
+  NHÀ CHÁY - phần XÁC NHÀ, không chứa một ngọn lửa nào.
+
+  ⚠ VÌ SAO NHÀ VÀ LỬA TÁCH LÀM HAI MODEL:
+  fire_manager là NƠI DUY NHẤT giữ sự thật về ổ cháy - nó xoá rồi spawn lại ổ
+  cháy ở mức thấp hơn mỗi khi quả cầu dập được (<temperature> và <emissive>
+  chỉ đọc lúc load, không đổi được runtime). Nếu nhét ngọn lửa vào file này
+  thì đám cháy đó KHÔNG BAO GIỜ DẬP ĐƯỢC, mà nhiệm vụ vẫn thấy nó -> drone
+  đánh giá là "chưa dập xong" mãi mãi. Nhà là công trình, lửa là ổ cháy.
+
+  Nhà này đã cháy được một lúc: mái sập hở nóc (khe giữa hai mái rộng 4.4 m),
+  tường ám khói đen. Cột lửa mức BLAZE (bán kính 2.0 m) do fire_manager spawn
+  đúng tâm nhà sẽ chui lên qua khe nóc đó - đấy là thứ camera nadir nhìn thấy.
+
+  ⚠ MÀU TƯỜNG PHẢI TỐI. Đèn lửa mức BLAZE (diffuse 1.0 0.50 0.12, tầm 45 m)
+  hắt lên tường và NHÂN vào màu tường. Tường sáng màu (diffuse 0.42 0.39 0.35)
+  bị hắt thành (0.42, 0.20, 0.04) -> H 12, S 231, V 107: LỌT ĐÚNG ngưỡng lửa
+  của fire_detector -> cả cái nhà bị nhận là lửa, vệt vượt max_blob_frac 0.25
+  và detector VỨT nó đi -> mất mục tiêu, không một dòng log.
+  Tường 0.16 bị hắt cho (98, 72, 51): V 98 vẫn qua, nhưng S = 122 < S_MIN 150
+  nên bị loại. Nghĩa là hàng rào ở đây là ĐỘ BÃO HOÀ, không phải độ sáng - làm
+  tường xám hơn thì an toàn, làm nó ngả cam là hỏng. Đổi màu tường thì chạy lại
+  test_nha_chay_khong_gia_lam_lua.
+
+  ⚠ BỀ NGANG MÓNG (8.4 m) LÀ TRẦN CỦA ember_radius mức BLAZE. Vành than hồng
+  nằm trong lòng khối móng nên nhỏ hơn móng thì từ trên không thấy; thò ra thì
+  nó thành các cung đứt đoạn quanh nhà, mỗi cung là một mục tiêu ma. Đã chạy
+  thật và trượt vì đúng chỗ này. test_vanh_than_khong_tho_ra_khoi_nha canh.
+
+  Gốc model đặt ở MẶT ĐẤT tham chiếu. Móng dày 3 m thò xuống -2.1 để hai góc
+  nhà không lơ lửng trên sườn dốc (chênh cao trong khuôn nhà là 1.1 m).
+
+  Kích thước: 10 x 8 m, tường cao 3.2 m, nóc 6.3 m.
+-->
+<sdf version="1.9">
+  <model name="burning_house">
+    <static>true</static>
+
+    <link name="structure">
+
+      <!-- ===================== MÓNG ===================== -->
+      <collision name="foundation">
+        <pose>0 0 -0.6 0 0 0</pose>
+        <geometry><box><size>10.4 8.4 3.0</size></box></geometry>
+      </collision>
+      <visual name="foundation">
+        <pose>0 0 -0.6 0 0 0</pose>
+        <geometry><box><size>10.4 8.4 3.0</size></box></geometry>
+        <material>
+          <ambient>0.12 0.12 0.11 1</ambient>
+          <diffuse>0.26 0.25 0.24 1</diffuse>
+          <specular>0.02 0.02 0.02 1</specular>
+        </material>
+      </visual>
+
+      <!-- ===================== TƯỜNG =====================
+           dày 0.25, chân +0.9 (mặt móng), đỉnh +4.1 -> tâm +2.5 -->
+      <collision name="wall_north">
+        <pose>0 3.875 2.5 0 0 0</pose>
+        <geometry><box><size>10.0 0.25 3.2</size></box></geometry>
+      </collision>
+      <visual name="wall_north">
+        <pose>0 3.875 2.5 0 0 0</pose>
+        <geometry><box><size>10.0 0.25 3.2</size></box></geometry>
+        <material>
+          <ambient>0.07 0.065 0.06 1</ambient>
+          <diffuse>0.16 0.15 0.14 1</diffuse>
+          <specular>0.01 0.01 0.01 1</specular>
+        </material>
+      </visual>
+
+      <collision name="wall_east">
+        <pose>4.875 0 2.5 0 0 0</pose>
+        <geometry><box><size>0.25 7.5 3.2</size></box></geometry>
+      </collision>
+      <visual name="wall_east">
+        <pose>4.875 0 2.5 0 0 0</pose>
+        <geometry><box><size>0.25 7.5 3.2</size></box></geometry>
+        <material>
+          <ambient>0.07 0.065 0.06 1</ambient>
+          <diffuse>0.16 0.15 0.14 1</diffuse>
+          <specular>0.01 0.01 0.01 1</specular>
+        </material>
+      </visual>
+
+      <collision name="wall_west">
+        <pose>-4.875 0 2.5 0 0 0</pose>
+        <geometry><box><size>0.25 7.5 3.2</size></box></geometry>
+      </collision>
+      <visual name="wall_west">
+        <pose>-4.875 0 2.5 0 0 0</pose>
+        <geometry><box><size>0.25 7.5 3.2</size></box></geometry>
+        <material>
+          <ambient>0.07 0.065 0.06 1</ambient>
+          <diffuse>0.16 0.15 0.14 1</diffuse>
+          <specular>0.01 0.01 0.01 1</specular>
+        </material>
+      </visual>
+
+      <!-- tường nam chẻ ba để chừa cửa 2.2 x 2.4 m -->
+      <collision name="wall_south_left">
+        <pose>-3.05 -3.875 2.5 0 0 0</pose>
+        <geometry><box><size>3.9 0.25 3.2</size></box></geometry>
+      </collision>
+      <visual name="wall_south_left">
+        <pose>-3.05 -3.875 2.5 0 0 0</pose>
+        <geometry><box><size>3.9 0.25 3.2</size></box></geometry>
+        <material>
+          <ambient>0.07 0.065 0.06 1</ambient>
+          <diffuse>0.16 0.15 0.14 1</diffuse>
+          <specular>0.01 0.01 0.01 1</specular>
+        </material>
+      </visual>
+
+      <collision name="wall_south_right">
+        <pose>3.05 -3.875 2.5 0 0 0</pose>
+        <geometry><box><size>3.9 0.25 3.2</size></box></geometry>
+      </collision>
+      <visual name="wall_south_right">
+        <pose>3.05 -3.875 2.5 0 0 0</pose>
+        <geometry><box><size>3.9 0.25 3.2</size></box></geometry>
+        <material>
+          <ambient>0.07 0.065 0.06 1</ambient>
+          <diffuse>0.16 0.15 0.14 1</diffuse>
+          <specular>0.01 0.01 0.01 1</specular>
+        </material>
+      </visual>
+
+      <collision name="wall_south_lintel">
+        <pose>0 -3.875 3.7 0 0 0</pose>
+        <geometry><box><size>2.2 0.25 0.8</size></box></geometry>
+      </collision>
+      <visual name="wall_south_lintel">
+        <pose>0 -3.875 3.7 0 0 0</pose>
+        <geometry><box><size>2.2 0.25 0.8</size></box></geometry>
+        <material>
+          <ambient>0.07 0.065 0.06 1</ambient>
+          <diffuse>0.16 0.15 0.14 1</diffuse>
+          <specular>0.01 0.01 0.01 1</specular>
+        </material>
+      </visual>
+
+      <!-- ===================== CỬA SỔ =====================
+           Chỉ là tấm ĐEN ốp hơi lồi ra mặt tường, không có collision: cắt lỗ
+           thật trên tường phải chẻ mỗi tường thành 5 hộp, không đáng.
+           Đen chứ KHÔNG phải cam phát sáng: cửa sổ sáng lửa thì sau khi dập
+           xong detector vẫn thấy "lửa" ở đúng chỗ đó và nhiệm vụ không bao
+           giờ kết luận được là đã dập. Nhà cháy rồi thì hốc cửa là hốc đen. -->
+      <visual name="window_n1">
+        <pose>-2.6 4.01 2.7 0 0 0</pose>
+        <geometry><box><size>1.4 0.06 1.2</size></box></geometry>
+        <material>
+          <ambient>0.02 0.02 0.02 1</ambient>
+          <diffuse>0.03 0.03 0.03 1</diffuse>
+        </material>
+      </visual>
+      <visual name="window_n2">
+        <pose>2.6 4.01 2.7 0 0 0</pose>
+        <geometry><box><size>1.4 0.06 1.2</size></box></geometry>
+        <material>
+          <ambient>0.02 0.02 0.02 1</ambient>
+          <diffuse>0.03 0.03 0.03 1</diffuse>
+        </material>
+      </visual>
+      <visual name="window_e1">
+        <pose>5.01 0 2.7 0 0 1.5708</pose>
+        <geometry><box><size>1.4 0.06 1.2</size></box></geometry>
+        <material>
+          <ambient>0.02 0.02 0.02 1</ambient>
+          <diffuse>0.03 0.03 0.03 1</diffuse>
+        </material>
+      </visual>
+      <visual name="window_w1">
+        <pose>-5.01 0 2.7 0 0 1.5708</pose>
+        <geometry><box><size>1.4 0.06 1.2</size></box></geometry>
+        <material>
+          <ambient>0.02 0.02 0.02 1</ambient>
+          <diffuse>0.03 0.03 0.03 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- ===================== MÁI (LIỀN, KHÔNG SẬP) =====================
+           Mái dốc hai phía, nóc chạy dọc X. Diềm ở y = +-4.2 cao +4.1, nóc ở
+           y = 0 cao +6.3 -> dốc 27.65 deg (0.4826 rad).
+           Hai tấm chạy TỪ DIỀM VÀO TỚI TẬN NÓC, không còn khe hở:
+             dài theo dốc = sqrt(4.2^2 + 2.2^2) = 4.7413
+             tâm tấm      = y +-2.1, z = 4.1 + 1.1 = 5.2
+
+           ⚠ NÓC KÍN ĐỔI CHỖ CỦA ĐÁM CHÁY. Bản trước chừa khe 4.4 m để cột lửa
+           mức BLAZE (r = 2.0, cao 12 m) chui lên từ TÂM NHÀ. Nóc kín thì ổ cháy
+           đặt ở tâm nhà sẽ nằm TRONG nhà - camera nadir chỉ thấy mái đen, nhiệm
+           vụ không bao giờ có mục tiêu, và không một dòng log nào nói vì sao.
+           Nay ổ cháy đặt TRÊN MẶT NÓC (z = gốc_nhà + 6.15, xem DEFAULT_FIRES /
+           CITY_FIRES). test_lua_nam_tren_mai canh đúng chỗ này. -->
+      <collision name="roof_north">
+        <pose>0 2.1 5.2 -0.4826 0 0</pose>
+        <geometry><box><size>10.4 4.7413 0.18</size></box></geometry>
+      </collision>
+      <visual name="roof_north">
+        <pose>0 2.1 5.2 -0.4826 0 0</pose>
+        <geometry><box><size>10.4 4.7413 0.18</size></box></geometry>
+        <material>
+          <ambient>0.05 0.045 0.04 1</ambient>
+          <diffuse>0.10 0.09 0.08 1</diffuse>
+          <specular>0.01 0.01 0.01 1</specular>
+        </material>
+      </visual>
+
+      <collision name="roof_south">
+        <pose>0 -2.1 5.2 0.4826 0 0</pose>
+        <geometry><box><size>10.4 4.7413 0.18</size></box></geometry>
+      </collision>
+      <visual name="roof_south">
+        <pose>0 -2.1 5.2 0.4826 0 0</pose>
+        <geometry><box><size>10.4 4.7413 0.18</size></box></geometry>
+        <material>
+          <ambient>0.05 0.045 0.04 1</ambient>
+          <diffuse>0.10 0.09 0.08 1</diffuse>
+          <specular>0.01 0.01 0.01 1</specular>
+        </material>
+      </visual>
+
+      <!-- ÚP NÓC: hai tấm gặp nhau ở y=0 theo hai mặt vát, mép chúng để hở một
+           đường chỉ và Ogre2 nhấp nháy z-fighting đúng chỗ đó. Thanh úp nóc này
+           che đường chỉ đi, đúng như ngói bò ngoài đời. Chỉ <visual>. -->
+      <visual name="ridge_cap">
+        <pose>0 0 6.32 0 0 0</pose>
+        <geometry><box><size>10.4 0.6 0.14</size></box></geometry>
+        <material>
+          <ambient>0.045 0.04 0.035 1</ambient>
+          <diffuse>0.09 0.08 0.07 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- hai đầu hồi: tam giác thì phải dùng mesh, nên xấp xỉ bằng HAI hộp
+           chồng nhau, thu dần theo bề rộng của mái ở cao độ đó, để nhìn ngang
+           không xuyên thấu vào trong mà cũng không thò lên trên mặt mái.
+             dưới: 4.1 -> 5.2 m, mái rộng 4.2 m ở đáy
+             trên: 5.2 -> 6.3 m, mái rộng 2.1 m ở đáy -->
+      <visual name="gable_east_low">
+        <pose>4.875 0 4.65 0 0 0</pose>
+        <geometry><box><size>0.25 4.2 1.1</size></box></geometry>
+        <material>
+          <ambient>0.06 0.055 0.05 1</ambient>
+          <diffuse>0.13 0.12 0.11 1</diffuse>
+        </material>
+      </visual>
+      <visual name="gable_east_top">
+        <pose>4.875 0 5.75 0 0 0</pose>
+        <geometry><box><size>0.25 2.1 1.1</size></box></geometry>
+        <material>
+          <ambient>0.06 0.055 0.05 1</ambient>
+          <diffuse>0.13 0.12 0.11 1</diffuse>
+        </material>
+      </visual>
+      <visual name="gable_west_low">
+        <pose>-4.875 0 4.65 0 0 0</pose>
+        <geometry><box><size>0.25 4.2 1.1</size></box></geometry>
+        <material>
+          <ambient>0.06 0.055 0.05 1</ambient>
+          <diffuse>0.13 0.12 0.11 1</diffuse>
+        </material>
+      </visual>
+      <visual name="gable_west_top">
+        <pose>-4.875 0 5.75 0 0 0</pose>
+        <geometry><box><size>0.25 2.1 1.1</size></box></geometry>
+        <material>
+          <ambient>0.06 0.055 0.05 1</ambient>
+          <diffuse>0.13 0.12 0.11 1</diffuse>
+        </material>
+      </visual>
+
+    </link>
+  </model>
+</sdf>

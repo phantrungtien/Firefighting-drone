@@ -1,0 +1,108 @@
+# FireHawk X4 trên khung ZD650 - tham số ArduCopter, MTOW 4.62 kg
+#
+# Nạp bằng:  sim_vehicle.py ... --add-param-file=$HOME/firedrop_sim/config/firehawk_x4.parm
+#
+# Khung 650 mm / 4.62 kg / T-W 3.55 nằm SÁT dải mà mặc định ArduCopter được
+# tinh chỉnh cho. Nên phần lớn PID dưới đây là MẶC ĐỊNH, không phải số bịa -
+# bản trước dùng gain thấp vì khung 1.2 m nặng 9 kg, giờ không còn đúng nữa.
+# Nghiệm thu ở Giai đoạn 2 bằng tiêu chí đo được:
+#   - treo ổn định ở 45-60% ga khi mang quả cầu
+#   - dao động roll/pitch < 2 độ khi giữ vị trí
+# Nếu drone lắc: giảm ATC_RAT_*_P thêm 30%. Nếu ì/chậm phản ứng: tăng 20%.
+
+FRAME_CLASS      1        # Quad
+FRAME_TYPE       1        # X
+
+# ---------------------------------------------------------------------------
+# CƠ CẤU THẢ - 1 servo xoay 180 deg trên SERVO9
+# ---------------------------------------------------------------------------
+# CHỖ CẮM TRÊN PIXHAWK 6C: 6C có IO co-processor, nên ArduPilot đánh số
+#   SERVO1-8  = MAIN 1-8   (1-4 đang chạy 4 motor quad)
+#   SERVO9-16 = AUX 1-8    (đầu ra FMU)
+# => SERVO9 = AUX1, chân đầu tiên của hàng AUX. Cắm dây tín hiệu servo chốt
+# vào đó; nguồn servo lấy từ BEC riêng, ĐỪNG lấy từ rail của FC.
+#
+# Dùng RCIN chứ KHÔNG dùng gripper: gripper của ArduCopter đóng cứng vào một
+# cơ cấu duy nhất, còn kênh servo thì mở đường cho khoang thứ hai sau này mà
+# không phải đổi kiến trúc. Rig thả trên drone thật cũng làm đúng kiểu này -
+# mỗi khoang một kênh servo, điều khiển bằng MAV_CMD_DO_SET_SERVO.
+SERVO9_FUNCTION  59       # RCIN9  -> khoang thả (kênh 8 trong ArduPilotPlugin)
+SERVO9_MIN       1100     # =   0 deg  KHOÁ
+SERVO9_MAX       1900     # = 180 deg  NHẢ
+SERVO9_TRIM      1100     # mặc định là KHOÁ, không phải nhả
+#
+# CẢ DẢI [SERVO9_MIN, SERVO9_MAX] ĐƯỢC ÁNH XẠ THÀNH [0, 180] deg. Đó là quy
+# ước của model, không phải của phần cứng - và trên servo thật nó thường KHÔNG
+# đúng: phần lớn servo "180 deg" chỉ quay được ~90-100 deg trong dải hẹp
+# 1100-1900 us, muốn hết 180 deg phải nới ra cỡ 600-2400 us. Cầm servo thật
+# lên thì đo góc ở 1900 us trước; nếu thiếu thì nới SERVO9_MAX ở đây VÀ
+# <servo_max> trong models/firehawk_x4/model.sdf - hai chỗ phải đi cùng nhau,
+# test_dai_pwm_model_khop_file_tham_so canh giúp.
+#
+# servo_min/servo_max ở đây PHẢI khớp <servo_min>/<servo_max> trong
+# models/firehawk_x4/model.sdf, nếu không thì PWM 1900 sẽ không cho ra
+# đúng góc pi và TriggeredPublisher sẽ không bao giờ kích hoạt.
+
+# ---------------------------------------------------------------------------
+# KHUNG 650 mm, CÁNH 10" TẢI ĐĨA CAO
+# ---------------------------------------------------------------------------
+MOT_HOVER_LEARN  2        # để ArduCopter tự học ga treo và ghi lại
+MOT_THST_HOVER   0.53     # điểm khởi đầu: sqrt(45.3/161) từ tính toán mô hình
+MOT_SPIN_ARM     0.10
+MOT_SPIN_MIN     0.15
+INS_GYRO_FILTER  30       # 650 mm nằm giữa: 40 cho cánh 5", 20 cho khung lớn
+
+# Mặc định ArduCopter, KHÔNG hạ như bản khung 9 kg. Cánh 10" có izz = 1.6e-4,
+# nhẹ hơn cánh 21" cũ 18 lần -> đáp ứng nhanh, gain thấp chỉ làm drone ì.
+ATC_RAT_RLL_P    0.135
+ATC_RAT_RLL_I    0.135
+ATC_RAT_RLL_D    0.0036
+ATC_RAT_PIT_P    0.135
+ATC_RAT_PIT_I    0.135
+ATC_RAT_PIT_D    0.0036
+ATC_RAT_YAW_P    0.180    # mặc định: mô-men cản trong model đã khớp motor thật
+ATC_ANG_RLL_P    4.5
+ATC_ANG_PIT_P    4.5
+
+# ---------------------------------------------------------------------------
+# BAY ĐƯỜNG THẢ
+# ---------------------------------------------------------------------------
+WPNAV_SPEED      500      # 5 m/s - khớp run_in_speed của mission_node
+WPNAV_SPEED_UP   200
+WPNAV_SPEED_DN   150
+WPNAV_ACCEL      250      # mặc định; khung nhẹ không cần hãm gia tốc như bản 9 kg
+WPNAV_RADIUS     200
+
+# ---------------------------------------------------------------------------
+# TỐC ĐỘ STREAM MAVLINK CHO MÁY TÍNH ĐỒNG HÀNH
+# ---------------------------------------------------------------------------
+# ArduPilot mặc định KHÔNG tự gửi các stream này - phải có ai đó xin. MAVProxy
+# xin hộ, nên chạy qua MAVProxy thì thấy đủ topic. Nối thẳng MAVROS vào cổng
+# SITL (chế độ nền, không tmux) thì SR0_* = 0 và /mavros/local_position/pose
+# IM LẶNG -> mission_node kẹt ở IDLE mãi mãi vì nó chờ pose.
+# Drone thật cũng phải đặt mấy tham số này cho cổng nối companion computer.
+SR0_POSITION     20       # LOCAL_POSITION_NED -> pose. 20 Hz khớp tick CCIP
+SR0_EXTRA1       20       # ATTITUDE -> hướng mũi, cần cho phép chiếu tia camera
+SR0_EXTRA2       10       # VFR_HUD -> tốc độ
+SR0_EXT_STAT     5        # trạng thái hệ thống, EKF, GPS
+SR0_RAW_SENS     2
+SR0_RC_CHAN      2
+SR1_POSITION     20       # cổng 1 = đường của MAVProxy khi chạy chế độ tmux
+SR1_EXTRA1       20
+SR1_EXTRA2       10
+SR1_EXT_STAT     5
+
+# ---------------------------------------------------------------------------
+# BỎ KIỂM TRA TIỀN BAY KHÔNG CẦN THIẾT TRONG SIM
+# ---------------------------------------------------------------------------
+# ARMING_CHECK GIỮ NGUYÊN MẶC ĐỊNH (1 = bật hết). Trước đây để 0 và đó là
+# nguồn gốc của một chuỗi lỗi dài: tắt kiểm tra thì drone arm được NGAY, nhưng
+# EKF chưa có gốc toạ độ - đo trên máy này là 9 s sau. mission_node arm xong
+# bắn NAV_TAKEOFF vào khoảng trống đó, ArduCopter trả MAV_RESULT_FAILED, còn
+# node thì ngồi chờ độ cao mãi mãi. Chính kiểm tra tiền bay là thứ ngăn đúng
+# việc đó, và nó miễn phí: bit PREARM_CHECK bật đúng lúc mọi thứ sẵn sàng.
+ARMING_CHECK     1
+
+# FS_THR_ENABLE thì vẫn phải tắt: mô phỏng không có tay điều khiển RC nào để
+# mất tín hiệu, bật lên là failsafe nổ ngay khi vừa arm.
+FS_THR_ENABLE    0
