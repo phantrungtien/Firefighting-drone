@@ -158,19 +158,7 @@ ros2 topic pub --once -w 1 /gcs/command std_msgs/String \
 ```
 `-w` của sim_vehicle xoá EEPROM: `--add-param-file` chỉ là giá trị mặc định, EEPROM cũ sẽ đè nếu không xoá.
 
-## Lên máy thật (chưa làm)
+## Việc còn lại
 
-```bash
-ros2 launch fire_drone mavros.launch.py fcu_url:=/dev/ttyAMA0:921600
-```
-- Đặt `SRx_*` cho cổng SERIAL nối companion, thiếu thì không có pose.
-- Hiệu chuẩn camera thật (K), đo `camera_offset`, in mã đúng `marker_size`.
-- Kiểm kênh servo thả bóng (`servo_channel`, `pwm_release`).
-- GPS không RTK lệch 1–3 m; mục tiêu đo tương đối bằng camera nên ít ảnh hưởng.
-
-## Còn lại
-
-- Node chết giữa task -> drone treo GUIDED, chưa có failsafe tự xử lý.
-- Bật gió cho bóng/drone và bù điểm thả theo gió (`ballistics.py` của firedrop_sim).
-- Thay mô hình bằng file SolidWorks drone + bóng (đang chờ).
-- Nhiều đóm lửa / nhiều bóng; detector hiện gộp mọi lần thấy cùng một id.
+Xem [CHECKLIST.md](CHECKLIST.md): đã kiểm gì (sim + thực tế), còn phải kiểm gì trước khi bay
+tự hành thật.
