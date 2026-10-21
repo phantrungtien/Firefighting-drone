@@ -121,12 +121,14 @@ src/fire_drone/
   launch/fire_mission.launch.py   cầu nối camera + marker_detector (+ fire_mission nếu mission:=true)
   config/mavros_pluginlists.yaml  cấm plugin làm MAVROS abort khi sim chậm
   config/mavros_tf.yaml           bật TF map -> base_link
+  config/drone_cam_*.yaml         calib webcam drone thật (camera_info ROS, 4K + 720p) - marker_detector -p calib:=
   config/firehawk_x4.parm         tham số SITL drone Gazebo (SR*, SERVO9 thả bóng, PID)
   config/sitl.parm                SR0_* cho SITL không Gazebo
   fire_drone/guided.py            GuidedNode (connect/arm/takeoff/land) + takeoff_test
   fire_drone/marker_detector.py   ArUco -> /fire/target
   fire_drone/fire_mission.py      task Chữa cháy
 scripts/run_sim.sh                bật/tắt cả bộ
+scripts/calib_charuco.py          chụp + calib webcam bằng bảng ChArUco (chạy trên Jetson)
 models/                           TẠM chép từ ~/firedrop_sim - thay bằng mô hình SolidWorks sau
   firehawk_x4                     quad ZD650 4.69 kg (hộp/trụ, chưa mesh), camera nadir có nhiễu
   elide_fireball, fireball_05kg   bóng chữa cháy - vật rời tì lên chốt bay1

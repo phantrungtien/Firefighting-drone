@@ -57,8 +57,12 @@ khi Jetson bật lại.
 
 - [ ] **4.1 YOLO lửa trên Jetson → `/fire/target`:** `fire_mission` hiện chỉ nhận mục tiêu từ mã
   ArUco trong sim. Thiếu lớn nhất.
-- [ ] **4.2 Camera:** webcam gắn hướng nào (code giả định nhìn thẳng xuống)? Calib K, HFOV thật
-  (đang ước 70°), đo `camera_offset`.
+- [ ] **4.2 Camera:** webcam gắn hướng nào (code giả định nhìn thẳng xuống)? Đo `camera_offset`.
+  - [x] Calib K 21/10/2026: ChArUco calib.io 6x8 (ô 30 mm), 31 ảnh 4K, RMS 0.66 px; HFOV thật
+    **75.3°** (không phải 70°), 720p fx 829.8 fy 825.7 cx 653.2 cy 357.0, méo nhẹ (bỏ méo lệch
+    ~21 cm ở mép ảnh, 20 m). `config/drone_cam_3840x2160.yaml`; `marker_detector`
+    `-p calib:=<file>` dùng nó thay `/rgb/camera_info`. Đổi camera / cắt khung khác thì calib lại
+    bằng `scripts/calib_charuco.py`.
 - [ ] **4.3 `run_gui.py` trên Jetson:** quay 4K, đổi zoom theo `/fire/zoom` khi đang bay (không dựng
   lại pipeline - mất ~8 s), gửi khung toàn cảnh cho `ground_range`; đo tải giải mã 4K MJPG.
 - [ ] **4.4 MAVROS trên companion:** `fcu_url` (vd `/dev/ttyAMA0:921600`), đặt `SRx_*` cho cổng
