@@ -341,7 +341,7 @@ class FireMission(GuidedNode):
             return log.error('MAVROS chua connected')
         if not self.wait_until(lambda: self.pose.header.stamp.sec > 0 and self.fix, 120.0):
             return log.error('khong co pose/GPS')
-        self.notify('San sang. Cham ban do GUI: Dom lua o day')
+        self.notify('San sang. Cham-giu ban do GUI -> "Chua chay tai day"')  # đúng chữ trên nút GUI (touch.wp_fire)
         # Chờ NGƯỜI, không phải chờ máy - không có hạn là đúng.
         self.wait_until(lambda: self.hint is not None, float('inf'))
         if not rclpy.ok():
