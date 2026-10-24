@@ -4,11 +4,15 @@
    làm chúng fulfil một std::promise hai lần -> MAVROS abort() giữa chuyến bay.
 2. config/mavros_tf.yaml bật TF map->base_link (apm_config tắt sẵn).
 Chi tiết lý do nằm trong chính hai file đó.
+3. namespace lấy theo node.launch của MAVROS đang cài: 2.16 (Jetson, apt 27/09/2026) đặt topic
+   theo TÊN NODE nên namespace 'mavros' ra /mavros/mavros/state - fire_mission chờ /mavros/state
+   mãi; bản cũ hơn (máy sim) thì vẫn phải 'mavros'.
 
   SITL :  ros2 launch fire_drone mavros.launch.py fcu_url:=tcp://127.0.0.1:5760
   Thật :  ros2 launch fire_drone mavros.launch.py fcu_url:=/dev/ttyAMA0:921600
 """
 import os
+import re
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -19,8 +23,11 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     cfg = os.path.join(get_package_share_directory('fire_drone'), 'config')
-    apm_config = os.path.join(
-        get_package_share_directory('mavros'), 'launch', 'apm_config.yaml')
+    mavros_launch = os.path.join(get_package_share_directory('mavros'), 'launch')
+    apm_config = os.path.join(mavros_launch, 'apm_config.yaml')
+    m = re.search(r'<arg name="namespace" default="([^"]*)"',
+                  open(os.path.join(mavros_launch, 'node.launch')).read())
+    ns = m.group(1) if m else 'mavros'
 
     return LaunchDescription([
         DeclareLaunchArgument('fcu_url', default_value='tcp://127.0.0.1:5760'),
@@ -30,7 +37,7 @@ def generate_launch_description():
         Node(
             package='mavros',
             executable='mavros_node',
-            namespace='mavros',
+            namespace=ns,
             output='screen',
             parameters=[
                 os.path.join(cfg, 'mavros_pluginlists.yaml'),

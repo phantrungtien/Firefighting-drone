@@ -55,19 +55,55 @@ khi Jetson bật lại.
 
 ## 4. Trước khi bay TỰ HÀNH thật
 
-- [ ] **4.1 YOLO lửa trên Jetson → `/fire/target`:** `fire_mission` hiện chỉ nhận mục tiêu từ mã
-  ArUco trong sim. Thiếu lớn nhất.
-- [ ] **4.2 Camera:** webcam gắn hướng nào (code giả định nhìn thẳng xuống)? Đo `camera_offset`.
-  - [x] Calib K 21/10/2026: ChArUco calib.io 6x8 (ô 30 mm), 31 ảnh 4K, RMS 0.66 px; HFOV thật
-    **75.3°** (không phải 70°), 720p fx 829.8 fy 825.7 cx 653.2 cy 357.0, méo nhẹ (bỏ méo lệch
-    ~21 cm ở mép ảnh, 20 m). `config/drone_cam_3840x2160.yaml`; `marker_detector`
-    `-p calib:=<file>` dùng nó thay `/rgb/camera_info`. Đổi camera / cắt khung khác thì calib lại
-    bằng `scripts/calib_charuco.py`.
-- [ ] **4.3 `run_gui.py` trên Jetson:** quay 4K, đổi zoom theo `/fire/zoom` khi đang bay (không dựng
-  lại pipeline - mất ~8 s), gửi khung toàn cảnh cho `ground_range`; đo tải giải mã 4K MJPG.
-- [ ] **4.4 MAVROS trên companion:** `fcu_url` (vd `/dev/ttyAMA0:921600`), đặt `SRx_*` cho cổng
-  SERIAL nối companion (thiếu thì không có pose).
-- [ ] **4.5 Tham số FC:** `RTL_ALT` (bản dump 17/09 = 15 m: RTL do failsafe bay về ở độ cao này,
-  có thể đâm vật cản quanh vùng bay); fence nếu bật (100 m / 150 m xung đột task 120 m / 300 m).
+- [ ] **4.1 YOLO lửa trên Jetson → `/fire/target`:** code xong 23/10/2026, CHƯA thử với lửa thật trước
+  camera. `run_gui.py` (pi5) gửi hộp lửa `/fire/detections` (tâm theo điểm ảnh khung 4K, đã đổi ngược
+  zoom, ~4.5 Hz) → `fire_locator` chiếu tia qua tâm hộp cắt mặt z = `ground_z` (chưa có thì 0) →
+  `/fire/target`. Thử hộp giả giữa ảnh ở 30 m ra đúng ngay dưới camera. Chạy:
+  `ros2 launch fire_drone fire_mission.launch.py real:=true`. Lửa trên mái cao ở mép ảnh lệch tới
+  ~15 m cho tới khi bay tới trên (tự hội tụ). 23/10 ảnh lửa trên điện thoại trước webcam: 39/39 khung
+  có hộp Fire 0.82-0.84, video GUI thấy hộp đúng lửa. Zoom: cùng ảnh ở giữa, x1 tâm (1772, 1220) điểm 0.67,
+  x2 (1766, 1218) điểm 0.78 - lệch 6 px 4K ~ 5 cm ở 20 m: đổi ngược vùng cắt đúng. Còn: lửa thật.
+  ⚠ BÁO NHẦM: 23/10 trong phòng lab, THANH AN TOÀN của robot (vàng/cam) bị báo Fire 18/19 khung ở x2 (điểm 0.41,
+  hộp 35x138 px YOLO) - model bắt theo màu (user). Đủ confirm 5 khung của fire_locator -> bay thật là
+  thả bóng vào vật đó. Đề xuất: người vận hành xác nhận khung có hộp trước khi thả (cần ros2_bridge +
+  nút GUI); gom ảnh báo nhầm từ camera drone để train lại; cân nhắc kiểm nhấp nháy / nâng `--fire-conf`.
+  Gom ảnh: `run_gui --fire-save ~/fire_dataset` (bật trong service 23/10) lưu khung có hộp lửa
+  (1280x720 như YOLO thấy, chưa vẽ) + nhãn YOLO các hộp model đoán, <= 1 khung/s. Train lại: xoá hộp
+  sai -> ảnh âm, sửa hộp đúng -> ảnh dương. Tên file có zoom và điểm (`..._x2.0_d0.41.jpg`).
+  Ngưỡng cỡ (ảnh lửa điện thoại lệch tâm ~(+205, -22) px 4K, quét x1..x6, toạ độ 4K lệch <= 4 px giữa
+  các mức): YOLO thấy 44x28 px -> 10/19 khung d0.37; 80x54 -> 17/19 d0.41; 98x63 -> 19/19 d0.59; 116x74
+  -> 19/19 d0.78. Bắt chắc khi cạnh ngắn >= ~55-60 px: zoom x5 thấy lửa 1 m tới ~38 m, 2 m ~75 m,
+  3 m ~113 m. x6 (= 640 px thật, bằng ảnh vào YOLO) thêm ~20%. Lửa thật có thể dễ hơn - đo lại.
+- [ ] **4.2 Camera:** gắn nhìn thẳng xuống như sim (user 23/10/2026). Còn: thử mép trên ảnh = mũi drone,
+  mép phải = bên phải (sai = lửa bị định vị sai hướng); đo `camera_offset` (x trước, y trái, z lên, tâm
+  FC -> ống kính; đang là số sim 0.26, 0, -0.18 - sai 26 cm ~ hết `drop_tol` 0.3 m).
+- [x] **4.2b Cơ cấu thả bóng** (user 23/10/2026): ngay dưới tâm FC, chỉ lệch theo chiều đứng -> không cần
+  bù ngang; lệch đứng vài cm không đáng kể khi thả từ 20 m.
+- [x] **4.3 `run_gui.py` trên Jetson** (23/10/2026): pipeline gst chạy trong tiến trình (`_GstPipe`),
+  `/fire/zoom` đổi vùng cắt nvvidconv lúc đang chạy - khung thứ 2 (~70 ms) đã đúng, 31 fps ở x1..x5;
+  nhánh xám toàn cảnh 960x540 sau `valve`, chỉ mở khi `/fire/ground_enable`: chính 30 + xám 29 fps.
+  `ground_range` chạy ngay trong `run_gui` (không qua DDS), nhận ~30 khung xám/s (log
+  `[fire] do mat dat: N khung xam/s`). Pipeline chạy trong tiến trình CON `gst_zoom.py`: nvjpegdec
+  thỉnh thoảng SEGV (`gst_adapter_push` assertion) - để trong `run_gui` là chết cả service (2 lần /
+  30 s), ở con thì `_watch` dựng lại sau 5 s, giữ zoom (thử `kill -SEGV`). Service đã cài 23/10.
+  Chưa thử `ground_range` khi hạ thật (bàn thí nghiệm camera đứng yên).
+- [ ] **4.4 MAVROS trên companion** (23/10/2026, USB `/dev/ttyACM0`, Pixhawk 6C): connected, IMU/GPS 10 Hz.
+  Sửa 2 lỗi: (1) MAVROS 2.16 (apt Jetson) đặt topic theo tên node -> namespace 'mavros' ra
+  `/mavros/mavros/state`; `mavros.launch.py` giờ lấy namespace theo `node.launch` của bản đang cài.
+  (2) FC để `MAVn_*` = 0 -> có HEARTBEAT nhưng không pose/IMU/GPS; `GuidedNode.request_streams()` xin
+  lại mỗi lần nối (thử tắt luồng -> gọi -> IMU về 10 Hz). Còn: `local_position/pose` chưa ra vì trong
+  nhà không có GPS fix - thử ngoài trời; (USB "rớt" 23/10 là rút tay, không phải lỗi).
+  Firmware mới đổi tên: `SRx_*` -> `MAVn_*`, `RTL_ALT` -> `RTL_ALT_M`, `WPNAV_SPEED*` -> `WP_SPD*`.
+  Node trên Jetson phải cùng `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` +
+  `CYCLONEDDS_URI=file://$HOME/pi5/cyclonedds_tailscale.xml` với mjpeg-stream.service.
+- [ ] **4.4b `ros2_bridge.py` (GUI_NATIVE) chưa có trên Jetson** → GUI chưa giao được điểm cháy cho drone thật.
+- [ ] **4.5 Tham số FC** (đọc 23/10/2026): `RTL_ALT_M` 15 (RTL do failsafe bay về ở độ cao này, có thể
+  đâm vật cản); `FENCE_ENABLE` 0 (bật thì `FENCE_ALT_MAX` 100 chặn task 120 m). ⚠ `BATT_FS_LOW_ACT` 0,
+  `BATT_FS_CRT_ACT` 0, `BATT_CRT_VOLT` 0, `FS_GCS_ENABLE` 0 = failsafe pin và mất GCS đang TẮT, ngược
+  mục 0. PreArm: `Rangefinder 1: Not Detected` (có cấu hình lidar), `Compasses inconsistent`.
+- [x] **4.5b Vòng tìm drone thật 2 m** (user 23/10/2026): `real:=true` đặt `search_radius` 2 m (sim 24 m).
+  Ở 20 m bước vòng 8/zoom m: x1-x3 chỉ treo ở điểm chấm rồi zoom, x4/x5 bay một vòng 2 / 1.6 m.
+  Điểm chấm phải trúng đám cháy trong vài mét. Đổi: `search_radius:=...` khi launch.
+  `max_zoom` 6 (sim 5): x6 = 640 px thật của khung 4K; ảnh lửa điện thoại x5 d0.6, x6 d0.78.
 - [ ] **4.6 Bay tự hành theo bậc:** HITL → bay thấp với tấm ArUco in đúng 1.5 m → lửa thật.
   GPS không RTK lệch 1–3 m; mục tiêu đo tương đối bằng camera nên ít ảnh hưởng.

@@ -12,7 +12,7 @@ import time
 import rclpy
 from geometry_msgs.msg import PoseStamped
 from mavros_msgs.msg import State, SysStatus
-from mavros_msgs.srv import CommandBool, CommandTOL, SetMode
+from mavros_msgs.srv import CommandBool, CommandTOL, SetMode, StreamRate
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 
@@ -46,6 +46,7 @@ class GuidedNode(Node):
         self.arm_cli = self.create_client(CommandBool, '/mavros/cmd/arming')
         self.mode_cli = self.create_client(SetMode, '/mavros/set_mode')
         self.takeoff_cli = self.create_client(CommandTOL, '/mavros/cmd/takeoff')
+        self.rate_cli = self.create_client(StreamRate, '/mavros/set_stream_rate')
 
     def _set(self, attr):
         return lambda msg: setattr(self, attr, msg)
@@ -74,6 +75,13 @@ class GuidedNode(Node):
                 return True
             rclpy.spin_once(self, timeout_sec=0.1)
         return False
+
+    def request_streams(self, hz=10):
+        """Xin FC gửi mọi luồng MAVLink. Pixhawk thật 23/10/2026 để MAVn_* = 0: có HEARTBEAT,
+        /mavros/state connected, nhưng KHÔNG pose/IMU/GPS - task chờ pose rồi bỏ cuộc mà không
+        rõ vì sao. REQUEST_DATA_STREAM chỉ sống tới lần FC khởi động lại nên gọi mỗi lần nối.
+        SITL đã có luồng sẵn, gọi thêm vô hại."""
+        self._call(self.rate_cli, StreamRate.Request(stream_id=0, message_rate=hz, on_off=True))
 
     def set_mode(self, mode):
         r = self._call(self.mode_cli, SetMode.Request(custom_mode=mode))
@@ -120,12 +128,15 @@ def main():
     log = node.get_logger()
     ok = False
     try:
-        if not node.wait_until(lambda: node.state.connected, 60.0):
+        connected = node.wait_until(lambda: node.state.connected, 60.0)
+        if connected:
+            node.request_streams()
+        if not connected:
             log.error('MAVROS chưa connected sau 60 s')
         # Pose chỉ có sau khi EKF đặt origin (cần GPS): SITL lạnh ~20-40 s,
         # ngoài trời có thể lâu hơn.
         elif not node.wait_until(lambda: node.pose.header.stamp.sec > 0, 120.0):
-            log.error('không có /mavros/local_position/pose - thiếu SRx_* hoặc chưa có GPS?')
+            log.error('không có /mavros/local_position/pose - thiếu luồng MAVLink hoặc chưa có GPS?')
         elif not node.arm():
             log.error('arm thất bại')
         elif not node.takeoff(alt):

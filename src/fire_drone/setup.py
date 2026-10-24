@@ -26,6 +26,7 @@ setup(
             'marker_detector = fire_drone.marker_detector:main',
             'fire_mission = fire_drone.fire_mission:main',
             'ground_range = fire_drone.ground_range:main',
+            'fire_locator = fire_drone.fire_locator:main',
         ],
     },
 )

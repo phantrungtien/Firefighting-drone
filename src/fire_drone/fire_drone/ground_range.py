@@ -129,8 +129,14 @@ class GroundRange(Node):
         img = np.frombuffer(msg.data, np.uint8).reshape(msg.height, msg.step)
         img = img[:, :msg.width * 3].reshape(msg.height, msg.width, 3)
         h = round(msg.height * self.work_w / msg.width)
-        gray = cv2.cvtColor(cv2.resize(img, (self.work_w, h), interpolation=cv2.INTER_AREA),
-                            cv2.COLOR_RGB2GRAY)
+        self.on_gray(cv2.cvtColor(cv2.resize(img, (self.work_w, h), interpolation=cv2.INTER_AREA),
+                                  cv2.COLOR_RGB2GRAY))
+
+    def on_gray(self, gray):
+        """Khung xám toàn cảnh rộng ~work_width. run_gui.py trên Jetson gọi thẳng hàm này (nhánh
+        xám của pipeline camera, không qua DDS: 960x540 x 10 Hz qua tailscale gói 1200 B là nghẹt)."""
+        if not self.enabled or self.pose is None:
+            return
         # ponytail: pose mới nhất, không khớp stamp; hạ 1.5 m/s x trễ ~50 ms = 7 cm/đoạn 3+ m.
         # Không bù nghiêng: drone treo thẳng trên đám cháy, nghiêng vài độ sai < 1%.
         z = self.pose.position.z + self.cam_dz

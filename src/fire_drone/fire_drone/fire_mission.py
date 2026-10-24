@@ -339,6 +339,7 @@ class FireMission(GuidedNode):
         log = self.get_logger()
         if not self.wait_until(lambda: self.state.connected, 60.0):
             return log.error('MAVROS chua connected')
+        self.request_streams()
         if not self.wait_until(lambda: self.pose.header.stamp.sec > 0 and self.fix, 120.0):
             return log.error('khong co pose/GPS')
         self.notify('San sang. Cham-giu ban do GUI -> "Chua chay tai day"')  # đúng chữ trên nút GUI (touch.wp_fire)
