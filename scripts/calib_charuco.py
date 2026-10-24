@@ -26,7 +26,7 @@ import numpy as np
 
 W, H = 3840, 2160
 OUT_W, OUT_H = 1280, 720
-DIR = os.path.expanduser(os.environ.get("CALIB_DIR", "~/pi5/calib"))
+DIR = os.path.expanduser(os.environ.get("CALIB_DIR", "~/jetson/calib"))
 DICTS = ["DICT_4X4_50", "DICT_4X4_100", "DICT_4X4_250", "DICT_5X5_50", "DICT_5X5_100",
          "DICT_5X5_250", "DICT_6X6_50", "DICT_6X6_250", "DICT_7X7_50", "DICT_ARUCO_ORIGINAL"]
 STILL_PX = 4.0     # goc lech < 4 px giua hai khung lien tiep = bang dung yen (khong nhoe)

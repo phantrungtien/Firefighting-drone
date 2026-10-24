@@ -101,7 +101,7 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   nhà không có GPS fix - thử ngoài trời; (USB "rớt" 23/10 là rút tay, không phải lỗi).
   Firmware mới đổi tên: `SRx_*` -> `MAVn_*`, `RTL_ALT` -> `RTL_ALT_M`, `WPNAV_SPEED*` -> `WP_SPD*`.
   Node trên Jetson phải cùng `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` +
-  `CYCLONEDDS_URI=file://$HOME/pi5/cyclonedds_tailscale.xml` với mjpeg-stream.service.
+  `CYCLONEDDS_URI=file://$HOME/jetson/cyclonedds_tailscale.xml` với mjpeg-stream.service.
 - [ ] **4.4b `ros2_bridge.py` (GUI_NATIVE) chưa có trên Jetson** → GUI chưa giao được điểm cháy cho drone thật.
 - [ ] **4.5 Tham số FC** (đọc 23/10/2026): `RTL_ALT_M` 15 - QUÁ trần 5 m, phải hạ (RTL do failsafe bay về ở độ cao này, có thể
   đâm vật cản); `FENCE_ENABLE` 0 (bật thì `FENCE_ALT_MAX` 100 chặn task 120 m). ⚠ `BATT_FS_LOW_ACT` 0,
