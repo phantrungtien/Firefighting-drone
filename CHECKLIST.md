@@ -1,6 +1,6 @@
 # Checklist task tự hành Chữa cháy
 
-Cập nhật 18/10/2026. `[x]` = đã kiểm (ghi ở đâu, ra sao), `[ ]` = còn phải kiểm.
+Cập nhật 24/10/2026. `[x]` = đã kiểm (ghi ở đâu, ra sao), `[ ]` = còn phải kiểm.
 Thứ tự đề xuất: 2.1 → 3.1 → 2.3 / 2.4 (làm ngay trong sim, không cần phần cứng), rồi 4.1 / 4.2
 khi Jetson bật lại.
 
@@ -55,14 +55,16 @@ khi Jetson bật lại.
 
 ## 4. Trước khi bay TỰ HÀNH thật
 
-- [ ] **4.1 YOLO lửa trên Jetson → `/fire/target`:** code xong 23/10/2026, CHƯA thử với lửa thật trước
-  camera. `run_gui.py` (pi5) gửi hộp lửa `/fire/detections` (tâm theo điểm ảnh khung 4K, đã đổi ngược
+- [ ] **4.1 YOLO lửa trên Jetson → `/fire/target`:** code xong 23/10/2026, lửa thật mới thử hột quẹt
+  (24/10). `run_gui.py` (pi5) gửi hộp lửa `/fire/detections` (tâm theo điểm ảnh khung 4K, đã đổi ngược
   zoom, ~4.5 Hz) → `fire_locator` chiếu tia qua tâm hộp cắt mặt z = `ground_z` (chưa có thì 0) →
   `/fire/target`. Thử hộp giả giữa ảnh ở 30 m ra đúng ngay dưới camera. Chạy:
   `ros2 launch fire_drone fire_mission.launch.py real:=true`. Lửa trên mái cao ở mép ảnh lệch tới
   ~15 m cho tới khi bay tới trên (tự hội tụ). 23/10 ảnh lửa trên điện thoại trước webcam: 39/39 khung
   có hộp Fire 0.82-0.84, video GUI thấy hộp đúng lửa. Zoom: cùng ảnh ở giữa, x1 tâm (1772, 1220) điểm 0.67,
-  x2 (1766, 1218) điểm 0.78 - lệch 6 px 4K ~ 5 cm ở 20 m: đổi ngược vùng cắt đúng. Còn: lửa thật.
+  x2 (1766, 1218) điểm 0.78 - lệch 6 px 4K ~ 5 cm ở 20 m: đổi ngược vùng cắt đúng.
+  Lửa thật 24/10/2026: hột quẹt trước camera bắt khá tốt (user, đánh giá bằng mắt, chưa có số đo),
+  có Gemini xác minh (`fire_verify`, pi5 `bd0f144`). Còn: lửa lớn hơn, xa hơn, nhìn từ trên xuống.
   ⚠ BÁO NHẦM: 23/10 trong phòng lab, THANH AN TOÀN của robot (vàng/cam) bị báo Fire 18/19 khung ở x2 (điểm 0.41,
   hộp 35x138 px YOLO) - model bắt theo màu (user). Đủ confirm 5 khung của fire_locator -> bay thật là
   thả bóng vào vật đó. Đề xuất: người vận hành xác nhận khung có hộp trước khi thả (cần ros2_bridge +
