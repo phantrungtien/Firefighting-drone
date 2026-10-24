@@ -8,7 +8,7 @@ Chỉ phát hiện, không bay:  ros2 launch fire_drone fire_mission.launch.py m
 Drone thật (Jetson):        ros2 launch fire_drone fire_mission.launch.py real:=true
   camera + YOLO lửa + ground_range nằm trong run_gui.py (mjpeg-stream.service), ở đây chỉ còn
   fire_locator (hộp lửa -> /fire/target) + fire_mission. Cùng RMW_IMPLEMENTATION/CYCLONEDDS_URI
-  với service (pi5/cyclonedds_tailscale.xml), không thì không thấy topic của nhau.
+  với service (jetson/cyclonedds_tailscale.xml), không thì không thấy topic của nhau.
 """
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -40,7 +40,10 @@ def generate_launch_description():
         Node(package='fire_drone', executable='marker_detector', output='screen', condition=sim),
         # khoảng cách tới mặt đất bằng camera 2D (thay lidar). Drone thật: chạy trong run_gui.py
         Node(package='fire_drone', executable='ground_range', output='screen', condition=sim),
+        # min_score 0.2 = --fire-conf cua run_gui: hop da qua Gemini (fire_verify.py, chi YOLO thi van
+        # doi 0.35) nen khong loc lai o day. 24/10/2026: 0.35 lam rot hop lua 0.21-0.32 Gemini da xac nhan.
         Node(package='fire_drone', executable='fire_locator', output='screen',
+             parameters=[{'min_score': 0.2}],
              condition=IfCondition(LaunchConfiguration('real'))),
         Node(package='fire_drone', executable='fire_mission', output='screen',
              parameters=[{'search_radius': LaunchConfiguration('search_radius'),
