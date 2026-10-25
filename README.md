@@ -115,12 +115,13 @@ Trong sim vòng kiểm tra luôn "VAN THAY" vì tấm ArUco không tắt như l�
 
 ## Thử thật với tấm lửa A0 (bay ≤ 5 m)
 
-`print/fire_a0.pdf`: ảnh lửa A0 ngang (1189x841 mm, 150 dpi, tràn lề) cho YOLO lửa trên
-Jetson thấy -> `fire_locator` -> `fire_mission` bay tới, thả bóng; khung camera (có hộp lửa)
-về GUI qua MJPEG như bay thật. Sinh lại từ `print/fire_src.png`:
+`print/fire_a0.pdf`: ảnh lửa A0 ngang (1189x841 mm, tràn lề) cho YOLO lửa trên Jetson
+thấy -> `fire_locator` -> `fire_mission` bay tới, thả bóng; khung camera (có hộp lửa) về GUI
+qua MJPEG như bay thật. Ảnh bên trong là `print/fire_4k.jpg` 3840x2715 (~82 dpi ở A0): ảnh gốc
+`print/fire_src.png` 640x480 upscale AI EDSR x4 (OpenCV dnn_superres), cắt về tỉ lệ √2 rồi
+Lanczos lên 3840. Sinh lại PDF:
 ```bash
-convert print/fire_src.png -filter Lanczos -resize 7022x4967^ -gravity center -extent 7022x4967 \
-  -unsharp 0x2 -units PixelsPerInch -density 150 -compress jpeg -quality 90 print/fire_a0.pdf
+convert print/fire_4k.jpg -units PixelsPerInch -density 82.03 -compress jpeg -quality 92 print/fire_a0.pdf
 ```
 Ở 5 m (webcam 4K fx ~2490 px) tấm rộng ~590 px khung gốc = ~100 px trong ảnh 640 vào YOLO:
 dư để nhận. Zoom x6 thì tấm phủ kín khung -> giới hạn zoom x2.
