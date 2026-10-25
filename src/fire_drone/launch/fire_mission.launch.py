@@ -30,6 +30,11 @@ def generate_launch_description():
         # Đo 23/10/2026 (ảnh lửa điện thoại): x5 điểm 0.59-0.63, x6 0.77-0.78. Sim 1080p: x6 là phóng ảnh.
         DeclareLaunchArgument('max_zoom', default_value=PythonExpression(
             ["6.0 if '", LaunchConfiguration('real'), "' == 'true' else 5.0"])),
+        # Thử tấm lửa A0 (print/, README): max_alt:=5 chặn alt GUI > 5 m, check_radius:=1.5 để
+        # vòng kiểm tra ở 5 m còn thấy tấm (camera chỉ phủ ~7.7x4.3 m). float(): gõ "5" (int) thì node
+        # khai báo double sẽ từ chối.
+        DeclareLaunchArgument('max_alt', default_value='120.0'),
+        DeclareLaunchArgument('check_radius', default_value='6.0'),
         Node(
             package='ros_gz_bridge', executable='parameter_bridge', name='camera_bridge',
             # tên topic khớp <topic>rgb/image</topic> của rgb_cam_link trong firehawk_x4
@@ -47,6 +52,8 @@ def generate_launch_description():
              condition=IfCondition(LaunchConfiguration('real'))),
         Node(package='fire_drone', executable='fire_mission', output='screen',
              parameters=[{'search_radius': LaunchConfiguration('search_radius'),
-                          'max_zoom': LaunchConfiguration('max_zoom')}],
+                          'max_zoom': LaunchConfiguration('max_zoom'),
+                          'max_alt': PythonExpression(['float(', LaunchConfiguration('max_alt'), ')']),
+                          'check_radius': PythonExpression(['float(', LaunchConfiguration('check_radius'), ')'])}],
              condition=IfCondition(LaunchConfiguration('mission'))),
     ])
