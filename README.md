@@ -113,6 +113,31 @@ Trong sim vòng kiểm tra luôn "VAN THAY" vì tấm ArUco không tắt như l�
 - `run_sim.sh` cd vào `worlds/` trước khi chạy gz: gz tìm `model://` cả ở thư mục hiện
   hành, chạy từ `~` là vớ nhầm `~/terrain`.
 
+## Thử thật với tấm lửa A0 (bay ≤ 5 m)
+
+`print/fire_a0.pdf`: ảnh lửa A0 ngang (1189x841 mm, 150 dpi, tràn lề) cho YOLO lửa trên
+Jetson thấy -> `fire_locator` -> `fire_mission` bay tới, thả bóng; khung camera (có hộp lửa)
+về GUI qua MJPEG như bay thật. Sinh lại từ `print/fire_src.png`:
+```bash
+convert print/fire_src.png -filter Lanczos -resize 7022x4967^ -gravity center -extent 7022x4967 \
+  -unsharp 0x2 -units PixelsPerInch -density 150 -compress jpeg -quality 90 print/fire_a0.pdf
+```
+Ở 5 m (webcam 4K fx ~2490 px) tấm rộng ~590 px khung gốc = ~100 px trong ảnh 640 vào YOLO:
+dư để nhận. Zoom x6 thì tấm phủ kín khung -> giới hạn zoom x2.
+
+```bash
+ros2 launch fire_drone fire_mission.launch.py real:=true max_alt:=5 max_zoom:=2.0 check_radius:=1.5
+```
+Trên GUI chọn độ cao **5 m** (trên 5 m node từ chối), chấm điểm cách tấm vài mét. Ở 5 m:
+`drop_alt` tự hạ còn 5 m (thả ngay ở độ cao bay), bước vòng tìm 2 m; vòng kiểm tra mặc định
+6 m nằm ngoài khung camera (~7.7x4.3 m) nên phải `check_radius:=1.5`.
+
+- In giấy **mờ (matte)**: giấy bóng loá nắng thành mảng trắng, YOLO không ra lửa.
+- **Ghim/dằn 4 góc + giữa**: gió cánh quạt ở 5 m thổi bay tấm giấy A0.
+- Trải trên cỏ/đất có vân, không trên nền trơn: `ground_range` đo độ cao bằng vân quanh đám cháy.
+- Tấm không tắt khi bị dập: vòng kiểm tra luôn báo "VAN THAY" (như ArUco trong sim).
+- Ảnh gốc có watermark web ở góc - chỉ dùng thử nội bộ.
+
 ## Cấu trúc
 
 ```
