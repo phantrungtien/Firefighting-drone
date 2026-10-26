@@ -21,6 +21,10 @@ khi Jetson bật lại.
 
 ## 1. Đã sửa, chưa kiểm đủ
 
+- [ ] **Thả bằng `DO_GRIPPER`** (26/10/2026, thay `DO_SET_SERVO 9 1900`: FC thật giờ để servo ở
+  SERVO16 = gripper, SERVO9_FUNCTION 0 -> lệnh cũ không tới servo). SITL đạt: GRAB -> SERVO9 1900,
+  RELEASE -> 1100. **Thực tế 23:11 đạt:** từ Jetson (pymavlink, ttyACM0) GRAB -> SERVO16 1900 sau
+  0.1 s, bóng rơi gọn; 2 s sau RELEASE -> 1100. Chưa: trọn task qua MAVROS, bay sim Gazebo.
 - [ ] `ground_range` bỏ số đo khi xa hơn `max_dist` 80 m — mới qua selfcheck, chưa bay sim.
 - [ ] Selfcheck toàn bộ GUI_NATIVE (18/10 mới chạy `check_touch`, `check_i18n`, `check_video`,
   `check_tabs`).

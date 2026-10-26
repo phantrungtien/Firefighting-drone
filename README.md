@@ -74,7 +74,8 @@ Tuỳ chọn: `HEADLESS=1` (không cửa sổ Gazebo), `VIDEO=0` (không MJPEG),
    số), KHÔNG theo z PnP của mã - lửa thật không có cỡ chuẩn. Thử 18/10/2026 với đóm lửa trên
    nóc nhà cấp 4 (mái 4 m): mái hiện ra ở ~27 m, drone dừng ~21 m trên mái, bóng lệch 7–14 cm. Chưa có số đo nào thì coi
    mặt đất ngang chỗ cất cánh và báo lên GCS.
-   Lệch < 0.3 m, đúng độ cao, đứng yên 2 s -> `DO_SET_SERVO 9 1900` thả bóng.
+   Lệch < 0.3 m, đúng độ cao, đứng yên 2 s -> `DO_GRIPPER` GRAB (servo GRIP_GRAB 1900, như gạt RC5 lên) thả bóng,
+   2 s sau RELEASE (1100, như RC5 về) đóng lại.
    Vì sao 20 m: đo 18/10/2026, ở 100 m mã còn ~11 px, PnP lệch 1.8 m ngang / 9 m dọc.
 6. **Vòng kiểm tra** bán kính 6 m ở độ cao thả: đếm số khung còn thấy đóm lửa -> báo
    "VAN THAY" / "khong con thay" (ở 100 m vòng này báo nhầm hết lửa).
@@ -122,7 +123,7 @@ src/fire_drone/
   config/mavros_pluginlists.yaml  cấm plugin làm MAVROS abort khi sim chậm
   config/mavros_tf.yaml           bật TF map -> base_link
   config/drone_cam_*.yaml         calib webcam drone thật (camera_info ROS, 4K + 720p) - marker_detector -p calib:=
-  config/firehawk_x4.parm         tham số SITL drone Gazebo (SR*, SERVO9 thả bóng, PID)
+  config/firehawk_x4.parm         tham số SITL drone Gazebo (SR*, gripper SERVO9 thả bóng, PID)
   config/sitl.parm                SR0_* cho SITL không Gazebo
   fire_drone/guided.py            GuidedNode (connect/arm/takeoff/land) + takeoff_test
   fire_drone/marker_detector.py   ArUco -> /fire/target

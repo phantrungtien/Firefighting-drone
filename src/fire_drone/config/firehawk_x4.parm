@@ -22,11 +22,16 @@ FRAME_TYPE       1        # X
 # => SERVO9 = AUX1, chân đầu tiên của hàng AUX. Cắm dây tín hiệu servo chốt
 # vào đó; nguồn servo lấy từ BEC riêng, ĐỪNG lấy từ rail của FC.
 #
-# Dùng RCIN chứ KHÔNG dùng gripper: gripper của ArduCopter đóng cứng vào một
-# cơ cấu duy nhất, còn kênh servo thì mở đường cho khoang thứ hai sau này mà
-# không phải đổi kiến trúc. Rig thả trên drone thật cũng làm đúng kiểu này -
-# mỗi khoang một kênh servo, điều khiển bằng MAV_CMD_DO_SET_SERVO.
-SERVO9_FUNCTION  59       # RCIN9  -> khoang thả (kênh 8 trong ArduPilotPlugin)
+# Dùng GRIPPER như FC thật (đọc 26/10/2026: servo ở SERVO16, RC5_OPTION 19 gạt
+# tay): fire_mission gửi MAV_CMD_DO_GRIPPER, đi đúng đường của kênh 5 trên tay RC.
+# Giá: ArduCopter chỉ có MỘT gripper - khoang thứ hai phải quay lại DO_SET_SERVO.
+# Tên ArduPilot NGƯỢC với cơ cấu: GRAB = 1900 = NHẢ, RELEASE = 1100 = KHOÁ.
+SERVO9_FUNCTION  28       # Gripper -> khoang thả (kênh 8 trong ArduPilotPlugin)
+GRIP_ENABLE      1
+GRIP_TYPE        1        # servo
+GRIP_GRAB        1900     # NHẢ  (= gạt RC5 lên). FC thật 26/10/2026: 1900 rơi gọn
+GRIP_RELEASE     1100     # KHOÁ (= RC5 về)
+GRIP_NEUTRAL     1100     # lúc FC khởi động. FC thật đang 1900 = NHẢ ngay khi cấp nguồn
 SERVO9_MIN       1100     # =   0 deg  KHOÁ
 SERVO9_MAX       1900     # = 180 deg  NHẢ
 SERVO9_TRIM      1100     # mặc định là KHOÁ, không phải nhả

@@ -30,7 +30,12 @@ from std_msgs.msg import Bool, Float32, String
 
 from fire_drone.guided import GuidedNode
 
-MAV_CMD_DO_SET_SERVO = 183
+# Thả/đóng bằng gripper, đúng đường của kênh 5 trên tay RC (RC5_OPTION 19, FC thật đọc
+# 26/10/2026: servo ở SERVO16, GRIP_GRAB 1900 - thử thật bóng rơi gọn, GRIP_RELEASE 1100).
+# Tên ArduPilot NGƯỢC với cơ cấu này: GRAB = 1900 = MỞ thả bóng (gạt RC5 lên),
+# RELEASE = 1100 = ĐÓNG (RC5 về). PWM nằm ở param FC, không ở đây.
+MAV_CMD_DO_GRIPPER = 211
+GRIP_OPEN, GRIP_CLOSE = 1, 0   # GRIPPER_ACTION_GRAB, GRIPPER_ACTION_RELEASE
 EARTH_R = 6378137.0
 
 
@@ -124,8 +129,6 @@ class FireMission(GuidedNode):
         self.drop_tol = p('drop_tol', 0.3)          # lệch ngang tối đa lúc thả (m)
         self.descend_r = p('descend_radius', 2.0)   # lệch ngang hơn mức này thì chưa hạ
         self.check_radius = p('check_radius', 6.0)
-        self.servo = p('servo_channel', 9)          # khớp SERVO9 trong firehawk_x4.parm
-        self.pwm_release = p('pwm_release', 1900)
         self.target = None
         self.seen = 0                               # số lần detector báo, để vòng kiểm tra đếm
         self.hint = None                            # (lat, lon) người vận hành chấm
@@ -323,9 +326,8 @@ class FireMission(GuidedNode):
                 since = None
         return None
 
-    def release(self):
-        req = CommandLong.Request(command=MAV_CMD_DO_SET_SERVO,
-                                  param1=float(self.servo), param2=float(self.pwm_release))
+    def gripper(self, action):
+        req = CommandLong.Request(command=MAV_CMD_DO_GRIPPER, param1=1.0, param2=float(action))
         r = self._call(self.cmd_cli, req)
         return bool(r and r.success)
 
@@ -378,13 +380,15 @@ class FireMission(GuidedNode):
         if err is None:
             return self.give_up('Khong treo on dinh, KHONG tha')
         t, fz = self.target.point, self.fire_z()
-        if not self.release():
-            self.notify('DO_SET_SERVO bi tu choi', StatusText.ERROR)
+        if not self.gripper(GRIP_OPEN):
+            self.notify('DO_GRIPPER bi tu choi', StatusText.ERROR)
         self.notify(f'DA THA BONG, lech {err:.2f} m, cach dat {self.pose.pose.position.z - fz:.1f} m')
         if not self.ground:
             self.notify('Khong do duoc mat dat (thieu van?): tinh theo muc nha', StatusText.WARNING)
         log.info(f'mat dat: camera 2D {fz:.2f} ({len(self.ground)} so do), PnP ma ArUco {t.z:.2f}')
         self.wait_until(lambda: False, 2.0)
+        if not self.gripper(GRIP_CLOSE):   # như gạt RC5 về 994
+            self.notify('DO_GRIPPER dong bi tu choi', StatusText.WARNING)
 
         # Vòng kiểm tra: còn thấy đóm lửa là còn cháy (một bóng thì chỉ báo được).
         fx, fy = t.x, t.y
