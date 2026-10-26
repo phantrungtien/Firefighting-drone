@@ -56,8 +56,11 @@ def generate_launch_description():
         Node(package='fire_drone', executable='ground_range', output='screen', condition=aruco),
         # min_score 0.2 = --fire-conf cua run_gui: hop da qua Gemini (fire_verify.py, chi YOLO thi van
         # doi 0.35) nen khong loc lai o day. 24/10/2026: 0.35 lam rot hop lua 0.21-0.32 Gemini da xac nhan.
+        # camera_offset (x trước, y trái, z lên; tâm FC -> ống kính) đo bằng thước 27/10/2026 (user): trước
+        # 20 cm, giữa, thấp 2 cm. Hướng camera kiểm cùng ngày: mép trên ảnh = mũi, mép phải = phải (đúng
+        # R_OPT_TO_BODY). Sim giữ mặc định của fire_locator = rgb_cam_link firehawk_x4.
         Node(package='fire_drone', executable='fire_locator', output='screen',
-             parameters=[{'min_score': 0.2}],
+             parameters=[{'min_score': 0.2, 'camera_offset': [0.20, 0.0, -0.02]}],
              condition=IfCondition(LaunchConfiguration('real'))),
         Node(package='fire_drone', executable='fire_locator', output='screen',
              parameters=[{'min_score': 0.2, 'calib': PathJoinSubstitution(

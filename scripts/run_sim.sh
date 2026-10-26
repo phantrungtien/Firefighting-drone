@@ -25,6 +25,7 @@ stop() {
   pkill -f "[m]avros_node"; pkill -f "[a]rducopter -S"; pkill -f "[x]term.*ArduCopter"
   pkill -f "[s]im_vehicle.py"  # wrapper không tự chết theo arducopter -> mỗi lần chạy sót một con
   pkill -f "[p]arameter_bridge"; pkill -f "[m]arker_detector"; pkill -f "[g]round_range"; pkill -f "[f]ire_mission"
+  pkill -f "[f]ire_locator"  # ANH_A0=1: thieu dong nay thi moi lan chay sot mot con (27/10: 8 con chong nhau)
   pkill -f "[r]os2_bridge.py"; pkill -f "[r]un_gui.py"
   pkill -f "[g]z sim"
   # gz sim gui có lúc lờ SIGTERM (18/10/2026 còn sống sau 5 s) -> chờ 3 s rồi giết hẳn

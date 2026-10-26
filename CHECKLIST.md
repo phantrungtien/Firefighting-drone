@@ -24,7 +24,9 @@ khi Jetson bật lại.
 - [ ] **Thả bằng `DO_GRIPPER`** (26/10/2026, thay `DO_SET_SERVO 9 1900`: FC thật giờ để servo ở
   SERVO16 = gripper, SERVO9_FUNCTION 0 -> lệnh cũ không tới servo). SITL đạt: GRAB -> SERVO9 1900,
   RELEASE -> 1100. **Thực tế 23:11 đạt:** từ Jetson (pymavlink, ttyACM0) GRAB -> SERVO16 1900 sau
-  0.1 s, bóng rơi gọn; 2 s sau RELEASE -> 1100. Chưa: trọn task qua MAVROS, bay sim Gazebo.
+  0.1 s, bóng rơi gọn; 2 s sau RELEASE -> 1100. **27/10 qua MAVROS** (`/mavros/cmd/command`, đúng
+  đường fire_mission): 2/2 lần ack 9 ms, SERVO16 1900 sau ~40 ms, đóng 1100 sau ~90 ms. Sim Gazebo bay
+  trọn đạt (tờ A0, bóng cách tâm 0.04-0.13 m). Chưa: trọn task trên drone thật.
 - [ ] `ground_range` bỏ số đo khi xa hơn `max_dist` 80 m — mới qua selfcheck, chưa bay sim.
 - [ ] Selfcheck toàn bộ GUI_NATIVE (18/10 mới chạy `check_touch`, `check_i18n`, `check_video`,
   `check_tabs`).
@@ -84,9 +86,11 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   các mức): YOLO thấy 44x28 px -> 10/19 khung d0.37; 80x54 -> 17/19 d0.41; 98x63 -> 19/19 d0.59; 116x74
   -> 19/19 d0.78. Bắt chắc khi cạnh ngắn >= ~55-60 px: zoom x5 thấy lửa 1 m tới ~38 m, 2 m ~75 m,
   3 m ~113 m. x6 (= 640 px thật, bằng ảnh vào YOLO) thêm ~20%. Lửa thật có thể dễ hơn - đo lại.
-- [ ] **4.2 Camera:** gắn nhìn thẳng xuống như sim (user 23/10/2026). Còn: thử mép trên ảnh = mũi drone,
-  mép phải = bên phải (sai = lửa bị định vị sai hướng); đo `camera_offset` (x trước, y trái, z lên, tâm
-  FC -> ống kính; đang là số sim 0.26, 0, -0.18 - sai 26 cm ~ hết `drop_tol` 0.3 m).
+- [x] **4.2 Camera:** gắn nhìn thẳng xuống như sim (user 23/10/2026). **27/10/2026 đã kiểm hướng:** tay đưa
+  vào từ phía mũi -> hiện từ mép TRÊN ảnh, từ bên phải -> mép PHẢI (chụp video trên tablet) = đúng
+  `R_OPT_TO_BODY`, không xoay/lật. `camera_offset` đo bằng thước: trước 20 cm, giữa, thấp 2 cm ->
+  `[0.20, 0.0, -0.02]` trong launch `real:=true` (trước đó là số sim 0.26, 0, -0.18). Lệch yaw vài độ
+  mắt không thấy - ở 5 m lửa gần giữa ảnh thì không đáng kể (bay tới trên rồi mới thả).
 - [x] **4.2b Cơ cấu thả bóng** (user 23/10/2026): ngay dưới tâm FC, chỉ lệch theo chiều đứng -> không cần
   bù ngang; lệch đứng vài cm không đáng kể khi thả từ 20 m.
 - [x] **4.3 `run_gui.py` trên Jetson** (23/10/2026): pipeline gst chạy trong tiến trình (`_GstPipe`),

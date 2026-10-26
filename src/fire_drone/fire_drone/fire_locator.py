@@ -65,7 +65,7 @@ class FireLocator(Node):
     def __init__(self):
         super().__init__('fire_locator')
         p = lambda n, v: self.declare_parameter(n, v).value  # noqa: E731
-        # ponytail: camera_offset = rgb_cam_link của firehawk_x4 (sim). Drone thật chưa đo (CHECKLIST 4.2).
+        # Mặc định = rgb_cam_link của firehawk_x4 (sim). Drone thật: số đo 27/10/2026 đặt trong launch real:=true.
         self.cam_off = np.array(p('camera_offset', [0.26, 0.0, -0.18]))
         self.confirm = p('confirm_frames', 5)       # YOLO 5 Hz: 1 s
         self.window = p('window', 20)
