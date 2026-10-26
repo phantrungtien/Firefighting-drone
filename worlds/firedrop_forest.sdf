@@ -134,6 +134,15 @@
       <pose>18 12 0 0 0 0</pose>
     </include>
 
+    <!-- TỜ ẢNH LỬA A0 (models/fire_a0) cho bài thả thật 26/10/2026: chỉ YOLO (ANH_A0=1) thấy.
+         (-4, 10): trong vùng phẳng 24 m và trên ground_patch (ground_range có vân để đo), cách
+         toà nhà 100 m 8.5 m - bay 5 m thì khung camera (~7 x 4 m) không dính tường. -->
+    <include>
+      <uri>model://fire_a0</uri>
+      <name>fire_a0</name>
+      <pose>-4 10 0 0 0 0</pose>
+    </include>
+
     <!-- TOÀ NHÀ 100 m chắn đường bay nhà (0,0) -> đóm lửa (18,12), thử 18/10/2026: drone
          KHÔNG có cảm biến vật cản, chỉ qua được nếu `alt` chọn trên GUI > 100 m. Khuôn
          4.5..9.5 x 2.5..7.5: cách nhà 5 m, cách vòng kiểm tra (r 6 m quanh đóm lửa) ~3.6 m. -->

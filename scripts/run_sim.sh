@@ -10,6 +10,9 @@
 #   MISSION=1 ./scripts/run_sim.sh  bật luôn node fire_mission (không cần GUI;
 #                                   giao điểm cháy bằng /gcs/command, xem README)
 #   ./scripts/run_sim.sh stop       tắt hết
+#   ANH_A0=1 ./scripts/run_sim.sh   dò lửa bằng CHÍNH code Jetson (~/jetson/tracking_pi5/run_gui.py:
+#                                   YOLO lửa + Gemini + ground_range) đọc /rgb/image thay ArUco -
+#                                   tờ ảnh lửa A0 ở (-4, 10). run_gui giữ cổng 8080 (video có hộp lửa).
 #
 # Mỗi tiến trình một file log trong logs/. Thứ tự dựa trên trạng thái sẵn sàng
 # (cổng 9002, cổng 5760), không sleep cứng: lần đầu waf build lại arducopter
@@ -22,7 +25,7 @@ stop() {
   pkill -f "[m]avros_node"; pkill -f "[a]rducopter -S"; pkill -f "[x]term.*ArduCopter"
   pkill -f "[s]im_vehicle.py"  # wrapper không tự chết theo arducopter -> mỗi lần chạy sót một con
   pkill -f "[p]arameter_bridge"; pkill -f "[m]arker_detector"; pkill -f "[g]round_range"; pkill -f "[f]ire_mission"
-  pkill -f "[r]os2_bridge.py"
+  pkill -f "[r]os2_bridge.py"; pkill -f "[r]un_gui.py"
   pkill -f "[g]z sim"
   # gz sim gui có lúc lờ SIGTERM (18/10/2026 còn sống sau 5 s) -> chờ 3 s rồi giết hẳn
   for _ in 1 2 3; do pgrep -f "[g]z sim" > /dev/null || break; sleep 1; done
@@ -55,7 +58,8 @@ for i in $(seq 1 300); do ss -ltn | grep -qE ":5760\b" && break; sleep 1; done
 
 setsid -f ros2 launch fire_drone mavros.launch.py > "$LOG/mavros.log" 2>&1
 M="false"; [ "${MISSION:-0}" = "1" ] && M="true"
-setsid -f ros2 launch fire_drone fire_mission.launch.py mission:=$M > "$LOG/mission.log" 2>&1
+Y="false"; [ "${ANH_A0:-0}" = "1" ] && Y="true"
+setsid -f ros2 launch fire_drone fire_mission.launch.py mission:=$M yolo:=$Y > "$LOG/mission.log" 2>&1
 
 # Camera sim -> MJPEG cổng 8080 (mjpeg_server của ~/GUI_NATIVE): xem bằng trình
 # duyệt http://<máy này>:8080/stream, qua Tailscale cũng được. Nhẹ hơn hẳn đẩy cả
@@ -63,7 +67,20 @@ setsid -f ros2 launch fire_drone fire_mission.launch.py mission:=$M > "$LOG/miss
 # (/rgb/zoomed của marker_detector, 960x540) như Jetson gửi về, không phải khung gốc.
 # Tắt: VIDEO=0. Không có ~/GUI_NATIVE thì im lặng bỏ qua.
 MJPEG="$HOME/GUI_NATIVE/tools/mjpeg_server.py"
-if [ "${VIDEO:-1}" != "0" ] && [ -f "$MJPEG" ]; then
+J="${JETSON:-$HOME/jetson}"
+if [ "$Y" = "true" ]; then
+  # Cờ = dòng lệnh run_gui trên Jetson (26/10/2026), bỏ phần chỉ có ở camera thật (--device,
+  # H.264, hl-ae/gamma, stamp) và phần ghi dữ liệu (fire-save). Có khoá Gemini thì
+  # bật --fire-verify + --fire-scan 3 như Jetson (~$0.0007/lần): YOLO sót thì Gemini quét cả khung
+  # quyết. --fire-picture: tờ A0 là ẢNH lửa, Gemini gọi real=false - chỉ cho bài thử này.
+  KEY=$(ls "$J"/hidden-lyceum-*.json 2>/dev/null | head -1)
+  (cd "$J/tracking_pi5" && setsid -f python3 -u run_gui.py --detect-only --topic /rgb/image \
+     --width 1920 --height 1080 --quality 80 --model yolo11n-960x544-raw.onnx --conf 0.3 --threads 3 \
+     --fire-model "$HOME/phantrungtien-fire-detection/models/best_nano_111_640.onnx" \
+     --fire-conf 0.2 --fire-threads 1 --fire-hz 5 ${KEY:+--fire-verify "$KEY" --fire-scan 3 --fire-picture} \
+     > "$LOG/run_gui.log" 2>&1)
+  echo "Video run_gui:  http://$(tailscale ip -4 2>/dev/null || echo 127.0.0.1):8080/stream"
+elif [ "${VIDEO:-1}" != "0" ] && [ -f "$MJPEG" ]; then
   setsid -f python3 "$MJPEG" --ros-topic /rgb/zoomed --every 3 --quality 60 > "$LOG/video.log" 2>&1
   echo "Video camera:   http://$(tailscale ip -4 2>/dev/null || echo 127.0.0.1):8080/stream"
 fi

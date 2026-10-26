@@ -13,8 +13,10 @@ Nhiều đám cháy: mỗi khung chỉ lấy hộp điểm cao nhất, trung v�
 
     python3 fire_locator.py --selfcheck
 """
+import bisect
 import os
 import sys
+import time
 
 import cv2
 import numpy as np
@@ -48,6 +50,17 @@ def ray_ground(ray_opt, drone_pos, R_body, cam_off, ground_z):
     return cam + t * d if t > 0 else None
 
 
+def pose_at(hist, t, tol=0.5):
+    """Lịch sử [(giờ, pose)] tăng dần -> pose gần giờ t nhất trong tol s; None nếu không có."""
+    i = bisect.bisect_left(hist, t, key=lambda h: h[0])
+    near = [h for h in hist[max(i - 1, 0):i + 1] if abs(h[0] - t) <= tol]
+    return min(near, key=lambda h: abs(h[0] - t))[1] if near else None
+
+
+def stamp_s(st):
+    return st.sec + st.nanosec * 1e-9
+
+
 class FireLocator(Node):
     def __init__(self):
         super().__init__('fire_locator')
@@ -61,6 +74,9 @@ class FireLocator(Node):
                                               'config', 'drone_cam_3840x2160.yaml')
         self.K, self.D, *_ = load_calib(path)
         self.pose = None
+        # ~20 s pose gần nhất: hộp Gemini (run_gui --fire-scan, YOLO sót) đến trễ 1-7 s - tia phải đi từ
+        # chỗ drone LÚC CHỤP khung (stamp của Detection2DArray), không phải chỗ drone bây giờ.
+        self.hist = []
         self.ground = []
         self.hits = []
         self.pub = self.create_publisher(PointStamped, '/fire/target', 10)
@@ -74,6 +90,9 @@ class FireLocator(Node):
 
     def on_pose(self, msg):
         self.pose = msg.pose
+        self.hist.append((stamp_s(msg.header.stamp), msg.pose))
+        if len(self.hist) > 1200:
+            del self.hist[:200]
 
     def on_enable(self, msg):
         if msg.data:
@@ -84,10 +103,13 @@ class FireLocator(Node):
                    key=lambda d: d.results[0].hypothesis.score if d.results else 0.0)
         if best is None or not best.results or best.results[0].hypothesis.score < self.min_score:
             return
-        if self.pose is None:
+        t = stamp_s(msg.header.stamp)
+        pose = pose_at(self.hist, t)
+        if pose is None and time.time() - t < 0.5:  # lịch sử lệch đồng hồ: khung mới thì pose mới nhất vẫn đúng
+            pose = self.pose
+        if pose is None:  # khung cũ mà không có pose lúc chụp: tia từ chỗ khác = lửa sai chỗ, bỏ
             return
-        # ponytail: pose mới nhất, không khớp stamp (như marker_detector); YOLO trễ ~50-100 ms.
-        p, q = self.pose.position, self.pose.orientation
+        p, q = pose.position, pose.orientation
         c = best.bbox.center.position
         gz = ground_filter(self.ground)
         e = ray_ground(pixel_ray(c.x, c.y, self.K, self.D), np.array([p.x, p.y, p.z]),
@@ -146,6 +168,10 @@ def _selfcheck():
         err = np.linalg.norm(e[:2] - tgt[:2])
         assert (err < 0.5) if ok else (err > 5.0), (off, err)  # mép ảnh lệch ~15 m: phải bay tới trên
     assert ray_ground(np.array([0.0, -1.0, 0.0]), drone, R, cam_off, 0.0) is None, 'tia ngang trời'
+    hist = [(100.0 + i * 0.1, i) for i in range(50)]                         # 10 Hz, 100.0 .. 104.9
+    assert pose_at(hist, 102.03) == 20 and pose_at(hist, 102.07) == 21, 'lấy pose gần giờ chụp nhất'
+    assert pose_at(hist, 99.6) == 0 and pose_at(hist, 99.4) is None, 'ngoài lịch sử quá 0.5 s: không đoán'
+    assert pose_at(hist, 105.3) == 49 and pose_at([], 1.0) is None
     print('fire_locator selfcheck OK')
 
 

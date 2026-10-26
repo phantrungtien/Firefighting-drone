@@ -1,0 +1,14 @@
+# Camera sim Gazebo (rgb_cam_link cua firehawk_x4): 1920x1080, HFOV 1.22173 rad, khong meo.
+# fx = 960 / tan(HFOV/2). Cho fire_locator khi ANH_A0=1 (hop lua YOLO theo diem anh topic /rgb/image).
+image_width: 1920
+image_height: 1080
+camera_name: sim_cam
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [1371.022782, 0.000000, 960.000000, 0.000000, 1371.022782, 540.000000, 0.000000, 0.000000, 1.000000]
+distortion_model: plumb_bob
+distortion_coefficients:
+  rows: 1
+  cols: 5
+  data: [0.0, 0.0, 0.0, 0.0, 0.0]
