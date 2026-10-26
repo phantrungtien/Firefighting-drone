@@ -41,7 +41,14 @@ khi Jetson bật lại.
 - [ ] **2.3 Phi công giành lái** (đổi mode / nút đỏ) ở từng pha: tìm, zoom, hạ, vòng kiểm tra —
   node phải buông, không thả, không đổi mode.
 - [ ] **2.4 Mất liên lạc giữa task:** mất LTE/WebSocket, mất SiK, bấm Huỷ task lúc đang hạ.
-- [ ] **2.5 Node `fire_mission` chết giữa task** → drone treo GUIDED, chưa có gì tự xử lý.
+- [x] **2.5 Huỷ task / node `fire_mission` chết giữa task** (user chốt 27/10/2026: TREO + báo GUI,
+  không tự đổi mode). Huỷ (SIGTERM): node gửi setpoint tại chỗ + STATUSTEXT `FIRE: TREO tai cho`;
+  bridge báo đỏ (severity 2) "drone TREO o GUIDED, khong ai lai" ngay rồi nhắc mỗi 5 s, tối đa
+  30 s, thôi khi đổi mode / disarm / bật task mới. Node chết (kill -9) và bridge khởi động lại
+  lúc drone GUIDED cũng báo. Sim 27/10: huỷ lúc 4.5 m/s -> trôi 6.9 m rồi về treo đúng chỗ huỷ,
+  báo đỏ sau 0.8 s; kill -9 -> báo sau ~1 s. Sửa luôn bridge chờ 6 s mỗi lần huỷ (zombie `ros2
+  run`), Jetson còn 0.9 s. ⚠ kill -9 / MAVROS chết: không gửi được setpoint treo -> drone bay
+  NỐT tới điểm đang bay tới rồi mới treo. Chưa có: tự RTL/LOITER (chỉ báo).
 - [ ] **2.6 Từ chối / thất bại:** chấm xa > 300 m, `alt` ngoài 5–120 m, không thấy ở mọi mức
   zoom (phải trả zoom x1 rồi RTL) — mới có selfcheck, chưa bay.
 - [ ] **2.7 Đám cháy trên dốc / đồi:** `ground_range` giả định vùng quanh lửa phẳng; `alt` tính so
@@ -110,7 +117,11 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   Firmware mới đổi tên: `SRx_*` -> `MAVn_*`, `RTL_ALT` -> `RTL_ALT_M`, `WPNAV_SPEED*` -> `WP_SPD*`.
   Node trên Jetson phải cùng `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` +
   `CYCLONEDDS_URI=file://$HOME/jetson/cyclonedds_tailscale.xml` với mjpeg-stream.service.
-- [ ] **4.4b `ros2_bridge.py` (GUI_NATIVE) chưa có trên Jetson** → GUI chưa giao được điểm cháy cho drone thật.
+- [x] **4.4b `ros2_bridge.py` trên Jetson** (27/10/2026): service `drone-ros` (MAVROS + fire_locator +
+  bridge 8765, `--mission-params ~/jetson/fire_mission_real.yaml`). Bridge gửi luôn giới hạn độ cao
+  của YAML lên GUI: bảng "Chữa cháy tại đây" có "Bay tìm" 2-5 m và "Hạ cách lửa" 2..độ cao bay (mặc
+  định 5 / 3), `fire_target` mang `drop`; node từ chối drop ngoài [min_alt, alt]. Sim: drop 6 m ->
+  "DA THA BONG ... cach dat 6.0 m". Chưa: giao điểm cháy thật trên drone.
 - [ ] **4.5 Tham số FC** (đọc 23/10/2026): `RTL_ALT_M` 15 - QUÁ trần 5 m, phải hạ (RTL do failsafe bay về ở độ cao này, có thể
   đâm vật cản); `FENCE_ENABLE` 0 (bật thì `FENCE_ALT_MAX` 100 chặn task 120 m). ⚠ `BATT_FS_LOW_ACT` 0,
   `BATT_FS_CRT_ACT` 0, `BATT_CRT_VOLT` 0, `FS_GCS_ENABLE` 0 = failsafe pin và mất GCS đang TẮT, ngược

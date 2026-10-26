@@ -10,12 +10,14 @@ lên GCS (tab Thông báo).
 
 Cú chấm là người vận hành GIAO một việc có giới hạn. Gạt khỏi GUIDED (cần RC, nút
 mode của GUI) hay nút đỏ lúc nào thì node buông lúc đó: không thả, không đổi mode.
+Huỷ task (bridge SIGTERM) / lỗi giữa chừng: TREO tại chỗ + báo, không đổi mode (user 27/10/2026).
 
     ros2 launch fire_drone fire_mission.launch.py
     python3 fire_mission.py --selfcheck
 """
 import json
 import math
+import signal
 import statistics
 import sys
 import time
@@ -45,8 +47,9 @@ def pilot_has_it(state):
 
 
 def parse_fire_cmd(raw):
-    """JSON từ /gcs/command -> (lat, lon, alt), hoặc None nếu không phải lệnh hợp lệ.
-    alt = độ cao bay người vận hành chọn trên thanh trượt; thiếu thì None (dùng search_alt).
+    """JSON từ /gcs/command -> (lat, lon, alt, drop), hoặc None nếu không phải lệnh hợp lệ.
+    alt = độ cao bay, drop = hạ cách lửa bao nhiêu m để thả - người vận hành chọn trên GUI;
+    thiếu thì None (dùng search_alt / drop_alt của node).
 
     Đến từ mạng (WebSocket của bridge) nên kiểm hết: sai kiểu, NaN, ngoài khoảng
     đều bỏ - một tọa độ rác là drone bay đi một nơi không ai chọn.
@@ -58,13 +61,28 @@ def parse_fire_cmd(raw):
         args = msg['args']
         lat, lon = float(args['lat']), float(args['lon'])
         alt = None if args.get('alt') is None else float(args['alt'])
+        drop = None if args.get('drop') is None else float(args['drop'])
     except (ValueError, TypeError, KeyError, AttributeError):
         return None
     if not (math.isfinite(lat) and math.isfinite(lon)) or abs(lat) > 90 or abs(lon) > 180:
         return None
-    if alt is not None and not math.isfinite(alt):
+    if any(a is not None and not math.isfinite(a) for a in (alt, drop)):
         return None
-    return lat, lon, alt
+    return lat, lon, alt, drop
+
+
+def pick_alts(alt, drop, lo, hi, search_alt, drop_alt):
+    """(độ cao bay, hạ cách lửa) người vận hành chọn -> (alt, drop), hoặc chuỗi lý do từ chối.
+    Thiếu thì lấy mặc định của node; drop mặc định không cao hơn alt (không leo lên để thả).
+    drop trong [lo, alt]: thấp hơn min_alt là sát lửa / mặt đất, cao hơn alt là leo lên thả.
+    Từ chối chứ không kẹp: người vận hành phải bay đúng số đã chọn, hoặc biết là không."""
+    alt = search_alt if alt is None else alt
+    drop = min(drop_alt, alt) if drop is None else drop
+    if not lo <= alt <= hi:
+        return f'Do cao {alt:g} m ngoai {lo:g}-{hi:g} m: tu choi'
+    if not lo <= drop <= alt:
+        return f'Ha cach lua {drop:g} m ngoai {lo:g}-{alt:g} m: tu choi'
+    return alt, drop
 
 
 def ll_to_enu(lat, lon, lat0, lon0):
@@ -130,6 +148,7 @@ class FireMission(GuidedNode):
         self.descend_r = p('descend_radius', 2.0)   # lệch ngang hơn mức này thì chưa hạ
         self.check_radius = p('check_radius', 6.0)
         self.target = None
+        self.driving = False                        # node đã arm/lái drone (không chỉ đang chờ chấm)
         self.seen = 0                               # số lần detector báo, để vòng kiểm tra đếm
         self.hint = None                            # (lat, lon) người vận hành chấm
         self.fix = None
@@ -164,18 +183,16 @@ class FireMission(GuidedNode):
             return  # lệnh khác của GUI, không phải việc của node này
         if self.hint is not None:
             return self.notify('Da co nhiem vu, bo qua diem cham moi', StatusText.WARNING)
-        lat, lon, alt = cmd
-        if alt is not None:
-            # Từ chối chứ không kẹp: người vận hành phải bay đúng số đã chọn, hoặc biết là không.
-            if not self.min_alt <= alt <= self.max_alt:
-                return self.notify(f'Do cao {alt:.0f} m ngoai {self.min_alt:.0f}-'
-                                   f'{self.max_alt:.0f} m: tu choi', StatusText.WARNING)
-            # Vết camera tỉ lệ thuận độ cao: giữ độ chồng mép giữa các vòng tìm.
-            self.ring_step *= alt / self.search_alt
-            # Bay đi/về/tìm ở `alt`. Thả ở drop_alt trên đóm lửa (z đo bằng PnP), nhưng
-            # không leo lên để thả: người vận hành chọn bay thấp hơn thì thả ở `alt`.
-            self.search_alt = alt
-            self.drop_alt = min(self.drop_alt, alt)
+        lat, lon, alt, drop = cmd
+        # Kiểm HẾT rồi mới đổi gì: lệnh bị từ chối không được để lại ring_step/drop_alt nửa vời.
+        ok = pick_alts(alt, drop, self.min_alt, self.max_alt, self.search_alt, self.drop_alt)
+        if isinstance(ok, str):
+            return self.notify(ok, StatusText.WARNING)
+        alt, drop = ok
+        # Vết camera tỉ lệ thuận độ cao: giữ độ chồng mép giữa các vòng tìm.
+        self.ring_step *= alt / self.search_alt
+        # Bay đi/về/tìm ở `alt`, hạ xuống `drop` m trên mặt quanh đóm lửa rồi thả.
+        self.search_alt, self.drop_alt = alt, drop
         self.hint = (lat, lon)
 
     def notify(self, text, severity=StatusText.INFO):
@@ -212,6 +229,18 @@ class FireMission(GuidedNode):
             self.notify(f'{why} -> RTL', StatusText.WARNING)
             self.climb_rtl()
         return False
+
+    def hold_here(self):
+        """Task dừng ngang (Huỷ task, lỗi): setpoint cuối là điểm đang bay TỚI, GUIDED sẽ bay
+        tiếp tới đó rồi mới treo. Gửi chỗ đang đứng = treo NGAY. Không đổi mode: lấy lại lái
+        là việc của người bay (RC / nút mode qua SiK)."""
+        if not (self.driving and self.state.armed and self.state.mode == 'GUIDED'):
+            return  # chưa lái / phi công đã giành / đã RTL: không phải việc của node
+        p = self.pose.pose.position
+        for _ in range(3):  # ponytail: 3 lần không chờ ack, topic đã nối sẵn với MAVROS
+            self.send_sp(p.x, p.y, p.z)
+            rclpy.spin_once(self, timeout_sec=0.05)
+        self.notify('TREO tai cho: task dung ngang', StatusText.CRITICAL)  # <= 50 byte
 
     def climb_rtl(self):
         """Leo THẲNG ĐỨNG lại search_alt rồi mới RTL. Cao hơn RTL_ALT thì RTL giữ nguyên độ
@@ -358,6 +387,7 @@ class FireMission(GuidedNode):
         self.notify(f'Nhan diem chay ({hx:.0f}, {hy:.0f}) m, bay {self.search_alt:.0f} m')
         self.target, self.seen = None, 0  # mục tiêu cũ (nếu có) không được dẫn đường
 
+        self.driving = True
         if not self.state.armed and not self.arm():
             return self.give_up('Arm that bai')
         if self.state.mode != 'GUIDED':
@@ -412,12 +442,21 @@ class FireMission(GuidedNode):
 
 def main():
     rclpy.init()
+    # Huỷ task = bridge SIGTERM cả nhóm. rclpy tự bắt SIGTERM và tắt context: mọi vòng
+    # `while rclpy.ok()` thoát giữa chừng, run() chạy tiếp nhánh lạ, không gửi được gì nữa.
+    # Đổi thành KeyboardInterrupt (đặt SAU rclpy.init để đè bộ bắt của nó) -> kịp treo.
+    signal.signal(signal.SIGTERM, signal.default_int_handler)
     node = FireMission()
+    ok = False
     try:
         ok = node.run()
     except KeyboardInterrupt:
-        ok = False
+        pass
     finally:
+        try:
+            node.hold_here()
+        except Exception as e:  # Ctrl-C: rclpy đã đóng context, FC giữ setpoint cuối
+            node.get_logger().error(f'khong treo duoc: {e}')
         node.destroy_node()
         rclpy.try_shutdown()
     sys.exit(0 if ok else 1)
@@ -432,16 +471,29 @@ def _selfcheck():
 
     # lệnh từ mạng: chỉ đúng action + số hữu hạn trong khoảng mới qua
     ok = '{"action":"fire_target","args":{"lat":-35.36,"lon":149.16}}'
-    assert parse_fire_cmd(ok) == (-35.36, 149.16, None), 'GUI cũ không gửi alt vẫn chạy'
+    assert parse_fire_cmd(ok) == (-35.36, 149.16, None, None), 'GUI cũ không gửi alt vẫn chạy'
     ok = '{"action":"fire_target","args":{"lat":-35.36,"lon":149.16,"alt":15}}'
-    assert parse_fire_cmd(ok) == (-35.36, 149.16, 15.0)
+    assert parse_fire_cmd(ok) == (-35.36, 149.16, 15.0, None), 'GUI chưa có ô hạ cách lửa'
+    ok = '{"action":"fire_target","args":{"lat":-35.36,"lon":149.16,"alt":5,"drop":3}}'
+    assert parse_fire_cmd(ok) == (-35.36, 149.16, 5.0, 3.0)
     for bad in ['rac', '{"action":"goto","args":{"lat":1,"lon":2}}', '{"action":"fire_target"}',
                 '{"action":"fire_target","args":{"lat":"NaN","lon":0}}',
                 '{"action":"fire_target","args":{"lat":91,"lon":0}}',
                 '{"action":"fire_target","args":{"lat":1,"lon":"x"}}', '[1,2]',
                 '{"action":"fire_target","args":{"lat":1,"lon":2,"alt":"NaN"}}',
-                '{"action":"fire_target","args":{"lat":1,"lon":2,"alt":"cao"}}']:
+                '{"action":"fire_target","args":{"lat":1,"lon":2,"alt":"cao"}}',
+                '{"action":"fire_target","args":{"lat":1,"lon":2,"alt":5,"drop":"inf"}}']:
         assert parse_fire_cmd(bad) is None, bad
+
+    # độ cao bay / hạ cách lửa: drone thật 2-5 m (fire_mission_real.yaml), mặc định 5 / 3
+    real = (2.0, 5.0, 5.0, 3.0)
+    assert pick_alts(None, None, *real) == (5.0, 3.0), 'GUI cũ: mặc định của node'
+    assert pick_alts(4.0, 2.0, *real) == (4.0, 2.0)
+    assert pick_alts(2.0, None, *real) == (2.0, 2.0), 'bay 2 m mà mặc định thả 3 m = leo lên thả'
+    assert pick_alts(5.0, 5.0, *real) == (5.0, 5.0), 'thả ngay ở độ cao bay được'
+    for alt, drop in [(20.0, None), (1.0, None), (5.0, 1.5), (4.0, 4.5), (None, 6.0)]:
+        assert isinstance(pick_alts(alt, drop, *real), str), (alt, drop)
+    assert pick_alts(None, None, 5.0, 120.0, 20.0, 20.0) == (20.0, 20.0), 'sim giữ nguyên'
 
     # 0.001 độ vĩ = 111.3 m bắc; 0.001 độ kinh ở vĩ độ 60 = một nửa
     e, n = ll_to_enu(10.001, 106.0, 10.0, 106.0)
