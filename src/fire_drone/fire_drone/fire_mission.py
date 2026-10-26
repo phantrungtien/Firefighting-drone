@@ -47,9 +47,9 @@ def pilot_has_it(state):
 
 
 def parse_fire_cmd(raw):
-    """JSON từ /gcs/command -> (lat, lon, alt, drop), hoặc None nếu không phải lệnh hợp lệ.
-    alt = độ cao bay, drop = hạ cách lửa bao nhiêu m để thả - người vận hành chọn trên GUI;
-    thiếu thì None (dùng search_alt / drop_alt của node).
+    """JSON từ /gcs/command -> (lat, lon, alt, drop, radius), hoặc None nếu không hợp lệ.
+    alt = độ cao bay, drop = hạ cách lửa bao nhiêu m để thả, radius = phạm vi tìm quanh điểm
+    chấm - người vận hành chọn trên GUI; thiếu thì None (dùng số của node).
 
     Đến từ mạng (WebSocket của bridge) nên kiểm hết: sai kiểu, NaN, ngoài khoảng
     đều bỏ - một tọa độ rác là drone bay đi một nơi không ai chọn.
@@ -62,13 +62,23 @@ def parse_fire_cmd(raw):
         lat, lon = float(args['lat']), float(args['lon'])
         alt = None if args.get('alt') is None else float(args['alt'])
         drop = None if args.get('drop') is None else float(args['drop'])
+        radius = None if args.get('radius') is None else float(args['radius'])
     except (ValueError, TypeError, KeyError, AttributeError):
         return None
     if not (math.isfinite(lat) and math.isfinite(lon)) or abs(lat) > 90 or abs(lon) > 180:
         return None
-    if any(a is not None and not math.isfinite(a) for a in (alt, drop)):
+    if any(a is not None and not math.isfinite(a) for a in (alt, drop, radius)):
         return None
-    return lat, lon, alt, drop
+    return lat, lon, alt, drop, radius
+
+
+def pick_radius(radius, default, max_r):
+    """Phạm vi tìm người vận hành chọn -> m, hoặc chuỗi lý do từ chối. 0 = chỉ treo ở điểm
+    chấm rồi zoom. Thiếu thì search_radius của node."""
+    r = default if radius is None else radius
+    if not 0 <= r <= max_r:
+        return f'Pham vi tim {r:g} m ngoai 0-{max_r:g} m: tu choi'
+    return r
 
 
 def pick_alts(alt, drop, lo, hi, search_alt, drop_alt):
@@ -111,10 +121,13 @@ def ground_filter(zs):
     """z mặt gần nhất từ chuỗi số đo ground_range. GẦN hơn thì tin NGAY (số mới nhất cao hơn
     trung vị = vừa thấy mái/tán cây: dừng hạ liền, nhầm thì chỉ là thả cao hơn chút); XA hơn
     thì phải trung vị 3 số. Trung vị trơn để mái chỉ kịp hiện 1 số trước khi tới nơi -> thả
-    16 m trên mái thay vì 20 (18/10/2026). Chưa có số nào: ngang chỗ cất cánh (z = 0)."""
+    16 m trên mái thay vì 20 (18/10/2026). Chưa có số nào: ngang chỗ cất cánh (z = 0).
+    KHÔNG BAO GIỜ dưới 0 (user 27/10/2026: không hạ dưới điểm đặt): số đo chỉ được đẩy điểm
+    thả LÊN (thấy mái), không kéo XUỐNG thấp hơn drop_alt trên chỗ cất cánh - đo sai thấp là
+    drone hạ sát đất. Đám cháy dưới hố thấp hơn chỗ cất cánh thì thả cao hơn, chịu."""
     if not zs:
         return 0.0
-    return max(statistics.median(zs[-3:]), zs[-1])
+    return max(0.0, statistics.median(zs[-3:]), zs[-1])
 
 
 def orbit_points(cx, cy, radius, step=6.0):
@@ -133,7 +146,8 @@ class FireMission(GuidedNode):
         self.max_alt = p('max_alt', 120.0)
         # Ở 20 m camera 70° 16:9 (= camera Jetson) thấy ~28x16 m: vòng 8 m chồng mép rộng.
         self.ring_step = p('ring_step', 8.0)
-        self.search_radius = p('search_radius', 24.0)
+        self.search_radius = p('search_radius', 24.0)     # mặc định khi GUI không gửi radius
+        self.max_search_radius = p('max_search_radius', 50.0)  # radius GUI gửi quá = từ chối
         self.dwell = p('dwell', 5.0)                # treo ở điểm chấm cho detector đủ khung
         # Zoom số trên Jetson (cắt giữa khung webcam 4K): x1 không thấy thì x2, x3... tới đây.
         # Đo 18/10/2026: mã 3 m cần >= ~25 px mới đọc chắc; 110 m x1 chỉ ~18 px -> 0 khung.
@@ -183,12 +197,15 @@ class FireMission(GuidedNode):
             return  # lệnh khác của GUI, không phải việc của node này
         if self.hint is not None:
             return self.notify('Da co nhiem vu, bo qua diem cham moi', StatusText.WARNING)
-        lat, lon, alt, drop = cmd
+        lat, lon, alt, drop, radius = cmd
         # Kiểm HẾT rồi mới đổi gì: lệnh bị từ chối không được để lại ring_step/drop_alt nửa vời.
         ok = pick_alts(alt, drop, self.min_alt, self.max_alt, self.search_alt, self.drop_alt)
-        if isinstance(ok, str):
-            return self.notify(ok, StatusText.WARNING)
+        r = pick_radius(radius, self.search_radius, self.max_search_radius)
+        for bad in (ok, r):
+            if isinstance(bad, str):
+                return self.notify(bad, StatusText.WARNING)
         alt, drop = ok
+        self.search_radius = r
         # Vết camera tỉ lệ thuận độ cao: giữ độ chồng mép giữa các vòng tìm.
         self.ring_step *= alt / self.search_alt
         # Bay đi/về/tìm ở `alt`, hạ xuống `drop` m trên mặt quanh đóm lửa rồi thả.
@@ -471,19 +488,25 @@ def _selfcheck():
 
     # lệnh từ mạng: chỉ đúng action + số hữu hạn trong khoảng mới qua
     ok = '{"action":"fire_target","args":{"lat":-35.36,"lon":149.16}}'
-    assert parse_fire_cmd(ok) == (-35.36, 149.16, None, None), 'GUI cũ không gửi alt vẫn chạy'
+    assert parse_fire_cmd(ok) == (-35.36, 149.16, None, None, None), 'GUI cũ không gửi alt vẫn chạy'
     ok = '{"action":"fire_target","args":{"lat":-35.36,"lon":149.16,"alt":15}}'
-    assert parse_fire_cmd(ok) == (-35.36, 149.16, 15.0, None), 'GUI chưa có ô hạ cách lửa'
-    ok = '{"action":"fire_target","args":{"lat":-35.36,"lon":149.16,"alt":5,"drop":3}}'
-    assert parse_fire_cmd(ok) == (-35.36, 149.16, 5.0, 3.0)
+    assert parse_fire_cmd(ok) == (-35.36, 149.16, 15.0, None, None), 'GUI chưa có ô hạ cách lửa'
+    ok = '{"action":"fire_target","args":{"lat":-35.36,"lon":149.16,"alt":5,"drop":3,"radius":6}}'
+    assert parse_fire_cmd(ok) == (-35.36, 149.16, 5.0, 3.0, 6.0)
     for bad in ['rac', '{"action":"goto","args":{"lat":1,"lon":2}}', '{"action":"fire_target"}',
                 '{"action":"fire_target","args":{"lat":"NaN","lon":0}}',
                 '{"action":"fire_target","args":{"lat":91,"lon":0}}',
                 '{"action":"fire_target","args":{"lat":1,"lon":"x"}}', '[1,2]',
                 '{"action":"fire_target","args":{"lat":1,"lon":2,"alt":"NaN"}}',
                 '{"action":"fire_target","args":{"lat":1,"lon":2,"alt":"cao"}}',
-                '{"action":"fire_target","args":{"lat":1,"lon":2,"alt":5,"drop":"inf"}}']:
+                '{"action":"fire_target","args":{"lat":1,"lon":2,"alt":5,"drop":"inf"}}',
+                '{"action":"fire_target","args":{"lat":1,"lon":2,"radius":"NaN"}}']:
         assert parse_fire_cmd(bad) is None, bad
+
+    # phạm vi tìm: 0 = chỉ treo ở điểm chấm; quá max_search_radius / âm = từ chối
+    assert pick_radius(None, 2.0, 10.0) == 2.0, 'GUI cũ: search_radius của node'
+    assert pick_radius(0.0, 2.0, 10.0) == 0.0 and pick_radius(10.0, 2.0, 10.0) == 10.0
+    assert isinstance(pick_radius(12.0, 2.0, 10.0), str) and isinstance(pick_radius(-1.0, 2.0, 10.0), str)
 
     # độ cao bay / hạ cách lửa: drone thật 2-5 m (fire_mission_real.yaml), mặc định 5 / 3
     real = (2.0, 5.0, 5.0, 3.0)
@@ -518,6 +541,8 @@ def _selfcheck():
     assert ground_filter([0.1, -0.5, 4.8]) == 4.8, 'vừa thấy mái mà vẫn hạ theo cỏ'
     assert ground_filter([4.8, 4.6, -20.0]) == 4.6, 'một số xa lạc loài kéo drone xuống'
     assert ground_filter([4.8, 0.2, 0.1]) == 0.2, 'mái biến mất 2 lần liền thì theo số đông'
+    assert ground_filter([-1.5, -2.0, -1.8]) == 0.0, 'đo mặt thấp hơn chỗ cất cánh: hạ dưới điểm đặt'
+    assert ground_filter([-0.5, -20.0, -3.0]) == 0.0
 
     pts = orbit_points(18, 12, 8)
     assert all(abs(math.hypot(x - 18, y - 12) - 8) < 1e-9 for x, y in pts)

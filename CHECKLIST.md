@@ -28,12 +28,14 @@ khi Jetson bật lại.
   đường fire_mission): 2/2 lần ack 9 ms, SERVO16 1900 sau ~40 ms, đóng 1100 sau ~90 ms. Sim Gazebo bay
   trọn đạt (tờ A0, bóng cách tâm 0.04-0.13 m). Chưa: trọn task trên drone thật.
 - [ ] `ground_range` bỏ số đo khi xa hơn `max_dist` 80 m — mới qua selfcheck, chưa bay sim.
-- [ ] Selfcheck toàn bộ GUI_NATIVE (18/10 mới chạy `check_touch`, `check_i18n`, `check_video`,
-  `check_tabs`).
+- [x] Selfcheck toàn bộ GUI_NATIVE: `selfcheck: PASS` 27/10/2026 (`b53f84b`).
 
 ## 2. Sim — kịch bản có thể gây va chạm
 
-- [ ] **2.1 Không đo được mặt nào** (mái trơn, khói che): đang coi lửa ngang chỗ cất cánh → nhà
+- [ ] **2.1 Không đo được mặt nào** — 27/10/2026 đã thêm sàn: `ground_filter` không bao giờ < 0 = không
+  bao giờ hạ dưới "hạ cách lửa" tính từ chỗ cất cánh (đo sai thấp không kéo drone xuống). CÒN: vật cao
+  mà không đo được (sim 27/10: mã trên mái 4 m, 0 số đo -> thả 6 m trên đất = ~2 m trên mái). Cũ:
+  (mái trơn, khói che): đang coi lửa ngang chỗ cất cánh → nhà
   30 m là hạ xuống dưới nóc. Thêm mức sàn (chưa có số đo thì không hạ tiếp / thả tại chỗ), thử
   với nhà cao mái trơn.
 - [ ] **2.2 Mái nhỏ trên nhà cao** lọt trong đĩa giữa ảnh bị bỏ (`inner_frac`) → chỉ đo được đất
@@ -122,7 +124,11 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   của YAML lên GUI: bảng "Chữa cháy tại đây" có "Bay tìm" 2-5 m và "Hạ cách lửa" 2..độ cao bay (mặc
   định 5 / 3), `fire_target` mang `drop`; node từ chối drop ngoài [min_alt, alt]. Sim: drop 6 m ->
   "DA THA BONG ... cach dat 6.0 m". Chưa: giao điểm cháy thật trên drone.
-- [ ] **4.5 Tham số FC** (đọc 23/10/2026): `RTL_ALT_M` 15 - QUÁ trần 5 m, phải hạ (RTL do failsafe bay về ở độ cao này, có thể
+- [ ] **4.5 Tham số FC** — đọc lại 27/10/2026 (ArduCopter 4.7.0): ĐÃ SỬA `RTL_ALT_M` 2, failsafe pin
+  (21.6 V RTL / 21.0 V LAND), mất RC = LAND, 1 la bàn, tắt lidar. Fence: user 27/10 KHÔNG bật
+  (`FENCE_ENABLE` 0; node tự giới hạn alt 2-5 m, max_range 30 m, phạm vi tìm <= 10 m). `FS_GCS_ENABLE` bật cũng vô
+  tác dụng với GUI_NATIVE: FC chỉ tính HEARTBEAT sysid 255, GUI là 254 và không gửi HEARTBEAT.
+  Ghi chép cũ (đọc 23/10/2026): `RTL_ALT_M` 15 - QUÁ trần 5 m, phải hạ (RTL do failsafe bay về ở độ cao này, có thể
   đâm vật cản); `FENCE_ENABLE` 0 (bật thì `FENCE_ALT_MAX` 100 chặn task 120 m). ⚠ `BATT_FS_LOW_ACT` 0,
   `BATT_FS_CRT_ACT` 0, `BATT_CRT_VOLT` 0, `FS_GCS_ENABLE` 0 = failsafe pin và mất GCS đang TẮT, ngược
   mục 0. PreArm: `Rangefinder 1: Not Detected` (có cấu hình lidar), `Compasses inconsistent`.
