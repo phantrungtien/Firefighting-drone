@@ -136,5 +136,7 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   Ở 20 m bước vòng 8/zoom m: x1-x3 chỉ treo ở điểm chấm rồi zoom, x4/x5 bay một vòng 2 / 1.6 m.
   Điểm chấm phải trúng đám cháy trong vài mét. Đổi: `search_radius:=...` khi launch.
   `max_zoom` 6 (sim 5): x6 = 640 px thật của khung 4K; ảnh lửa điện thoại x5 d0.6, x6 d0.78.
+  27/10/2026 user đổi `max_zoom` **2** (YAML + launch real:=true): bay <= 5 m camera đã thấy ~7x4 m;
+  không thấy lửa thì tìm hết x1..x6 với phạm vi 10 m mất ~58 phút (1 m/s), x1..x2 ~9 phút.
 - [ ] **4.6 Bay tự hành theo bậc:** HITL → bay thấp với tấm ArUco in đúng 1.5 m → lửa thật.
   GPS không RTK lệch 1–3 m; mục tiêu đo tương đối bằng camera nên ít ảnh hưởng.

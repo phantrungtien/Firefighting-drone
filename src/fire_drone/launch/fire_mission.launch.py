@@ -43,7 +43,9 @@ def generate_launch_description():
         # Drone thật: x6 = vùng cắt 640 px của khung 4K, bằng ảnh vào YOLO -> vẫn điểm ảnh thật.
         # Đo 23/10/2026 (ảnh lửa điện thoại): x5 điểm 0.59-0.63, x6 0.77-0.78. Sim 1080p: x6 là phóng ảnh.
         DeclareLaunchArgument('max_zoom', default_value=PythonExpression(
-            ["6.0 if '", LaunchConfiguration('real'), "' == 'true' else 5.0"])),
+            # Drone that 2 (user 27/10/2026): bay <= 5 m camera da thay ~7x4 m, zoom cao chi lam
+            # vong tim day them (10 m: x1..x6 ~58 phut). = max_zoom cua ~/jetson/fire_mission_real.yaml.
+            ["2.0 if '", LaunchConfiguration('real'), "' == 'true' else 5.0"])),
         Node(
             package='ros_gz_bridge', executable='parameter_bridge', name='camera_bridge',
             # tên topic khớp <topic>rgb/image</topic> của rgb_cam_link trong firehawk_x4
