@@ -149,11 +149,11 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   Tablet đọc lúc bay 27/10 08:18 (PARAM_VALUE trong tlog): `RTL_ALT_M` **3** (không phải 2),
   `BATT_LOW_VOLT` 21.6, `BATT_FS_LOW_ACT` 2 (RTL), `BATT_FS_CRT_ACT` 1 (LAND), `FS_THR_ENABLE` 3,
   `FS_GCS_ENABLE` 0, `FENCE_ENABLE` 0, `WP_SPD` 1. Không còn PreArm "Compasses inconsistent".
-  ⚠ CẢM BIẾN DÒNG SAI: lúc treo FC báo 0.4-0.5 A (thật phải vài chục A) -> mAh gần như không tăng,
-  % đứng 97% trong khi áp chạm 21.6 V. Cần calib `BATT_AMP_PERVLT` (đo dòng bằng ampe kìm / sạc lại
-  đo mAh nạp vào) hoặc kiểm power module. Tới lúc đó % và ô CÒN của GUI là số sai; GUI 29/10 đã thêm
-  cảnh báo theo ĐIỆN ÁP (`safety.volt_level`: vàng khi còn < 0.1 V/cell trên `BATT_LOW_VOLT`, đỏ khi
-  chạm). Pin cắm lúc 08:06 chỉ 3.96 V/cell (~70%, chưa đầy) mà FC báo 97-99%.
+  ⚠ KHÔNG ĐO ĐƯỢC DÒNG: nguồn lấy từ mạch Matek không có cảm biến dòng (user 29/10/2026) -> FC báo
+  nhiễu 0.4-0.6 A, % đứng 97% trong khi áp chạm 21.6 V. CẦN: đặt `BATT_MONITOR` = 3 (chỉ áp) để FC
+  thôi báo % / dòng bịa. GUI 29/10: ô PIN + giọng nói cảnh báo theo ĐIỆN ÁP (`safety.volt_level`:
+  vàng khi còn < 0.1 V/cell trên `BATT_LOW_VOLT`, đỏ khi chạm), kể cả khi FC không báo %; trước ARM
+  báo áp nghỉ < 90% (`safe.not_full_v`). Pin cắm lúc 08:06 chỉ 3.96 V/cell (~70%) mà FC báo 97-99%.
   Đọc lại 27/10/2026 (ArduCopter 4.7.0): ĐÃ SỬA `RTL_ALT_M` 2, failsafe pin
   (21.6 V RTL / 21.0 V LAND), mất RC = LAND, 1 la bàn, tắt lidar. Fence: user 27/10 KHÔNG bật
   (`FENCE_ENABLE` 0; node tự giới hạn alt 2-5 m, max_range 30 m, phạm vi tìm <= 10 m). `FS_GCS_ENABLE` bật cũng vô
