@@ -1,6 +1,6 @@
 # Checklist task tự hành Chữa cháy
 
-Cập nhật 24/10/2026. `[x]` = đã kiểm (ghi ở đâu, ra sao), `[ ]` = còn phải kiểm.
+Cập nhật 29/10/2026. `[x]` = đã kiểm (ghi ở đâu, ra sao), `[ ]` = còn phải kiểm.
 Thứ tự đề xuất: 2.1 → 3.1 → 2.3 / 2.4 (làm ngay trong sim, không cần phần cứng), rồi 4.1 / 4.2
 khi Jetson bật lại.
 
@@ -9,6 +9,12 @@ khi Jetson bật lại.
 - [x] **Thực tế:** servo thả bóng trên FC thật (`servo_channel` 9, `pwm_release` 1900).
 - [x] **Thực tế:** bay drone thật mang bóng, thả bằng tay cầm RC.
 - [x] **Thực tế:** failsafe pin / mất GCS có trên FC thật.
+- [x] **Thực tế 27/10/2026** (tlog tablet `20261027-081832-real.tlog`, đọc 29/10): 2 lần bay tay RC
+  POSHOLD -> LAND, 08:24:13-08:25:25 (5.3 m) và 08:27:29-08:28:41 (5.6 m), GPS 22-32 vệ tinh HDOP
+  0.45-0.62. MAVLink chỉ qua SiK (~1.8 kB/s, mất gói theo seq 11%, 5-18%/phút dù drone cách vài m).
+  Failsafe pin KÍCH THẬT: pin 23.75 -> thấp nhất 21.48 V sau hai lần ~1 phút, 08:37:58 FC tự sang RTL
+  (đang disarm) + "PreArm: Battery failsafe" -> pin sụt áp nhanh, kiểm pin trước khi bay task.
+  Tablet KHÔNG gửi lệnh nào (commands.log không có dòng sau 03:16) — chưa bật task trên drone thật.
 - [x] **Sim:** GUI chọn độ cao trên thanh trượt → `fire_target` mang `alt` → node bay đúng độ cao
   (40 m: thả lệch 0.02 m so với mục tiêu).
 - [x] **Sim:** toà nhà 100 m chắn đường bay, bay 110–120 m qua mái cả lúc đi lẫn RTL (leo lại
@@ -43,6 +49,9 @@ khi Jetson bật lại.
 - [ ] **2.3 Phi công giành lái** (đổi mode / nút đỏ) ở từng pha: tìm, zoom, hạ, vòng kiểm tra —
   node phải buông, không thả, không đổi mode.
 - [ ] **2.4 Mất liên lạc giữa task:** mất LTE/WebSocket, mất SiK, bấm Huỷ task lúc đang hạ.
+  Đã xảy ra thật 27/10/2026 (dưới đất, disarm): 08:32:23 mất video + WebSocket (mạng Jetson chết),
+  08:34:45 SiK im 193 s, FC không khởi động lại (`time_boot_ms` liền) -> mất CẢ HAI đường, không
+  có gì để DualLink đổi sang. Chưa rõ vì sao SiK im.
 - [x] **2.5 Huỷ task / node `fire_mission` chết giữa task** (user chốt 27/10/2026: TREO + báo GUI,
   không tự đổi mode). Huỷ (SIGTERM): node gửi setpoint tại chỗ + STATUSTEXT `FIRE: TREO tai cho`;
   bridge báo đỏ (severity 2) "drone TREO o GUIDED, khong ai lai" ngay rồi nhắc mỗi 5 s, tối đa
@@ -101,7 +110,14 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   `[0.20, 0.0, -0.02]` trong launch `real:=true` (trước đó là số sim 0.26, 0, -0.18). Lệch yaw vài độ
   mắt không thấy - ở 5 m lửa gần giữa ảnh thì không đáng kể (bay tới trên rồi mới thả).
 - [x] **4.2b Cơ cấu thả bóng** (user 23/10/2026): ngay dưới tâm FC, chỉ lệch theo chiều đứng -> không cần
-  bù ngang; lệch đứng vài cm không đáng kể khi thả từ 20 m.
+  bù ngang; lệch đứng vài cm không đáng kể khi thả từ 20 m. 29/10/2026 user đo: tâm ống kính cách tâm
+  thả **170 mm** (coi là dọc trục thân, thả SAU ống kính) -> tâm thả trước tâm FC ~3 cm, vẫn khớp "dưới FC".
+- [ ] **4.2c Vạch ngắm thả bóng trên video** (29/10/2026, `run_gui.py` `_FireRos.draw_drop`, Jetson vẽ lên
+  khung trước khi nén nên khớp khung + zoom): '+' trắng = tâm camera, vòng xanh = chỗ bóng chạm đất nếu
+  nhả NGAY (pose + vận tốc + nghiêng MAVROS, độ cao theo `rel_alt` = so chỗ ARM, bán kính vòng = 0.5 m
+  trên đất). Treo 5 m: vòng dưới '+' ~28 px (khung 1280x720); trôi 1 m/s -> vòng lên phía mũi ~1.1 m.
+  `test_drop_reticle.py` (jetson) + `fire_locator --selfcheck` đạt. CHƯA: chạy trên Jetson, thả thử
+  thật để chỉnh `DROP_DELAY` (0.1 s, đoán) - bóng rơi trước vòng thì tăng, sau vòng thì giảm.
 - [x] **4.3 `run_gui.py` trên Jetson** (23/10/2026): pipeline gst chạy trong tiến trình (`_GstPipe`),
   `/fire/zoom` đổi vùng cắt nvvidconv lúc đang chạy - khung thứ 2 (~70 ms) đã đúng, 31 fps ở x1..x5;
   nhánh xám toàn cảnh 960x540 sau `valve`, chỉ mở khi `/fire/ground_enable`: chính 30 + xám 29 fps.
@@ -123,8 +139,17 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   bridge 8765, `--mission-params ~/jetson/fire_mission_real.yaml`). Bridge gửi luôn giới hạn độ cao
   của YAML lên GUI: bảng "Chữa cháy tại đây" có "Bay tìm" 2-5 m và "Hạ cách lửa" 2..độ cao bay (mặc
   định 5 / 3), `fire_target` mang `drop`; node từ chối drop ngoài [min_alt, alt]. Sim: drop 6 m ->
-  "DA THA BONG ... cach dat 6.0 m". Chưa: giao điểm cháy thật trên drone.
-- [ ] **4.5 Tham số FC** — đọc lại 27/10/2026 (ArduCopter 4.7.0): ĐÃ SỬA `RTL_ALT_M` 2, failsafe pin
+  "DA THA BONG ... cach dat 6.0 m". Chưa: giao điểm cháy thật trên drone (bay thật 27/10 tablet có
+  nối WebSocket bridge - `stderr.log` 08:33 báo keepalive timeout - nhưng không bật task).
+- [ ] **4.5 Tham số FC** — 27/10/2026 user ghi (Mission Planner): `MAV1_OPTIONS` 4 (bit 2 bỏ qua
+  lệnh đổi tần số của GCS) + `MAV1_POSITION/EXTRA1/EXTRA2/RAW_SENS` 10, `MAV1_EXT_STAT/EXTRA3` 2
+  (cổng USB = MAVROS). Không có bit 2 thì Mission Planner cắm USB xin luồng mặc định và ArduPilot
+  LƯU đè (ghi 10 -> khởi động lại còn 4). Bit 2 bật: giữ 10 qua khởi động lại (user kiểm trên MP).
+  CHƯA: đo tần số MAVROS trên Jetson khi chưa bật task (phải ~10 Hz); `RTL_ALT_M` -> 5.
+  Tablet đọc lúc bay 27/10 08:18 (PARAM_VALUE trong tlog): `RTL_ALT_M` **3** (không phải 2),
+  `BATT_LOW_VOLT` 21.6, `BATT_FS_LOW_ACT` 2 (RTL), `BATT_FS_CRT_ACT` 1 (LAND), `FS_THR_ENABLE` 3,
+  `FS_GCS_ENABLE` 0, `FENCE_ENABLE` 0, `WP_SPD` 1. Không còn PreArm "Compasses inconsistent".
+  Đọc lại 27/10/2026 (ArduCopter 4.7.0): ĐÃ SỬA `RTL_ALT_M` 2, failsafe pin
   (21.6 V RTL / 21.0 V LAND), mất RC = LAND, 1 la bàn, tắt lidar. Fence: user 27/10 KHÔNG bật
   (`FENCE_ENABLE` 0; node tự giới hạn alt 2-5 m, max_range 30 m, phạm vi tìm <= 10 m). `FS_GCS_ENABLE` bật cũng vô
   tác dụng với GUI_NATIVE: FC chỉ tính HEARTBEAT sysid 255, GUI là 254 và không gửi HEARTBEAT.
@@ -140,3 +165,11 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   không thấy lửa thì tìm hết x1..x6 với phạm vi 10 m mất ~58 phút (1 m/s), x1..x2 ~9 phút.
 - [ ] **4.6 Bay tự hành theo bậc:** HITL → bay thấp với tấm ArUco in đúng 1.5 m → lửa thật.
   GPS không RTK lệch 1–3 m; mục tiêu đo tương đối bằng camera nên ít ảnh hưởng.
+- [ ] **4.7 Video trắng xoá ngoài trời** (bay 27/10/2026, user báo). Tablet nhận đủ ~30 fps, mất ~0%,
+  và lớp phủ mất hình của GUI là màu tối -> trắng nằm trong ảnh Jetson gửi. Nghi `--hl-ae 100 --gamma
+  1.2` (`HighlightAE`, run_gui.py): exposure 0.3-10 ms + gain 0-100, bước x1.15 mỗi 0.5 s (~2.5 s/EV),
+  median 95-114 thì không hạ dù nửa khung cháy; trong phòng 28/10 kịch trần 10 ms + gain 100 mà
+  median 50-90 -> đáy 0.3 ms có thể không đủ cho nắng. Số chỉnh trong phòng 15/10 cho webcam cũ.
+  CHƯA ĐO ngoài trời: log Jetson 27/10 mất vì journald không lưu đĩa (không có `/var/log/journal`,
+  rút pin là mất; giờ journal trước NTP là giờ giả). Cần: bật lưu journal, rồi bỏ `--hl-ae` (AE
+  camera) hoặc sửa HighlightAE, ra trời đọc dòng `[ae]` (`exposure 3 gain 0 chay >10%` = đáy không đủ).

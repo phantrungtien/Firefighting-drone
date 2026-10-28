@@ -79,6 +79,8 @@ if [ "$Y" = "true" ]; then
      --width 1920 --height 1080 --quality 80 --model yolo11n-960x544-raw.onnx --conf 0.3 --threads 3 \
      --fire-model "$HOME/phantrungtien-fire-detection/models/best_nano_111_640.onnx" \
      --fire-conf 0.2 --fire-threads 1 --fire-hz 5 ${KEY:+--fire-verify "$KEY" --fire-scan 3 --fire-picture} \
+     --calib "$WS/install/fire_drone/share/fire_drone/config/sim_cam_1920x1080.yaml" \
+     --cam-offset 0.26,0,-0.18 --cam-to-drop 0.26 \
      > "$LOG/run_gui.log" 2>&1)
   echo "Video run_gui:  http://$(tailscale ip -4 2>/dev/null || echo 127.0.0.1):8080/stream"
 elif [ "${VIDEO:-1}" != "0" ] && [ -f "$MJPEG" ]; then

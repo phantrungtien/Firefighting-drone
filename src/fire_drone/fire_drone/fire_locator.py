@@ -50,6 +50,27 @@ def ray_ground(ray_opt, drone_pos, R_body, cam_off, ground_z):
     return cam + t * d if t > 0 else None
 
 
+def ground_pixel(pt, drone_pos, R_body, cam_off, K, D):
+    """Điểm ENU -> điểm ảnh khung calib (ngược ray_ground). None nếu sau ống kính hay xa ngoài khung."""
+    opt = R_OPT_TO_BODY.T @ (R_body.T @ (np.asarray(pt, float) - drone_pos - R_body @ cam_off))
+    # 1.2: khung calib chỉ tới ~0.8 (cx/fx); xa hơn đa thức méo gập ngược điểm vào trong ảnh
+    if opt[2] <= 0.05 or abs(opt[0]) > 1.2 * opt[2] or abs(opt[1]) > 1.2 * opt[2]:
+        return None
+    return cv2.projectPoints(opt[None], np.zeros(3), np.zeros(3), K, D)[0].ravel()
+
+
+def impact_point(pos, vel, ground_z, delay=0.0, g=9.81):
+    """Bóng nhả LÚC NÀY (cơ cấu mở sau `delay` s) chạm mặt z = ground_z ở đâu (ENU); None nếu đã dưới đất.
+    Rơi tự do mang vận tốc drone; bỏ cản gió (bóng nặng, từ 5 m rơi ~1 s)."""
+    vel = np.asarray(vel, float)
+    p = np.asarray(pos, float) + vel * delay
+    h = p[2] - ground_z
+    if h <= 0:
+        return None
+    t = (vel[2] + np.sqrt(vel[2] ** 2 + 2 * g * h)) / g   # h + vz t - g t²/2 = 0
+    return np.array([p[0] + vel[0] * t, p[1] + vel[1] * t, ground_z])
+
+
 def pose_at(hist, t, tol=0.5):
     """Lịch sử [(giờ, pose)] tăng dần -> pose gần giờ t nhất trong tol s; None nếu không có."""
     i = bisect.bisect_left(hist, t, key=lambda h: h[0])
@@ -144,9 +165,9 @@ def _selfcheck():
 
     def project(target, drone, R):
         """Điểm ENU -> điểm ảnh 4K qua méo thật, đúng chiều run_gui sẽ gửi."""
-        opt = R_OPT_TO_BODY.T @ (R.T @ (target - drone - R @ cam_off))
-        assert opt[2] > 0
-        return cv2.projectPoints(opt[None], np.zeros(3), np.zeros(3), K, D)[0].ravel()
+        uv = ground_pixel(target, drone, R, cam_off, K, D)
+        assert uv is not None
+        return uv
 
     for yaw, roll in [(0.0, 0.0), (0.7, 0.08), (-2.0, -0.05)]:
         cr, sr, cy, sy = np.cos(roll / 2), np.sin(roll / 2), np.cos(yaw / 2), np.sin(yaw / 2)
@@ -168,6 +189,20 @@ def _selfcheck():
         err = np.linalg.norm(e[:2] - tgt[:2])
         assert (err < 0.5) if ok else (err > 5.0), (off, err)  # mép ảnh lệch ~15 m: phải bay tới trên
     assert ray_ground(np.array([0.0, -1.0, 0.0]), drone, R, cam_off, 0.0) is None, 'tia ngang trời'
+    # vạch ngắm thả bóng (run_gui): treo -> ngay dưới; 1 m/s ở 5 m -> trước ~1.01 m; đang lên / cơ cấu
+    # mở trễ -> xa hơn; đã dưới đất -> không có
+    assert np.allclose(impact_point([3, 4, 5], [0, 0, 0], 0.0), [3, 4, 0])
+    e = impact_point([0, 0, 5], [1, 0, 0], 0.0)
+    assert abs(e[0] - np.sqrt(2 * 5 / 9.81)) < 1e-9 and e[1] == 0, e
+    assert impact_point([0, 0, 5], [1, 0, 1], 0.0)[0] > e[0] + 0.1
+    assert impact_point([0, 0, 5], [1, 0, 0], 0.0, delay=0.1)[0] > e[0] + 0.09
+    assert impact_point([0, 0, -0.1], [0, 0, 0], 0.0) is None
+    # drone thật treo 5 m cân bằng: điểm dưới tâm FC nằm DƯỚI tâm ảnh (ống kính trước FC 20 cm, mũi = mép
+    # trên, 4.2), ~fy*0.2/5 px; điểm sau lưng ống kính / ngang trời -> None
+    u, v = ground_pixel([0, 0, 0], np.array([0, 0, 5.0]), R, np.array([0.20, 0, -0.02]), K, D)
+    assert abs(u - K[0, 2]) < 15 and 80 < v - K[1, 2] < 120, (u, v)
+    assert ground_pixel([0, 0, 6], np.array([0, 0, 5.0]), R, cam_off, K, D) is None
+    assert ground_pixel([50, 0, 0], np.array([0, 0, 5.0]), R, cam_off, K, D) is None
     hist = [(100.0 + i * 0.1, i) for i in range(50)]                         # 10 Hz, 100.0 .. 104.9
     assert pose_at(hist, 102.03) == 20 and pose_at(hist, 102.07) == 21, 'lấy pose gần giờ chụp nhất'
     assert pose_at(hist, 99.6) == 0 and pose_at(hist, 99.4) is None, 'ngoài lịch sử quá 0.5 s: không đoán'
