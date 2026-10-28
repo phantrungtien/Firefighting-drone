@@ -4,9 +4,11 @@
       -> WebSocket -> ros2_bridge -> /gcs/command {"action":"fire_target","args":{lat,lon,alt}}
 
 Node: chờ lệnh -> (arm + cất cánh nếu đang dưới đất) -> bay thẳng tới điểm chấm
--> bay vòng nở dần quanh điểm đó tới khi detector thấy đóm lửa -> treo trên đóm lửa
--> thả bóng -> bay một vòng KIỂM TRA quanh đám cháy -> RTL. Mỗi bước báo STATUSTEXT
-lên GCS (tab Thông báo).
+-> bay vòng nở dần quanh điểm đó tới khi detector thấy đóm lửa -> TREO TẠI CHỖ, chờ người
+vận hành trượt xác nhận trên GUI (user 29/10/2026; /fire/ask -> bridge -> topic `mission`.ask,
+trả lời {"action":"fire_confirm","args":{"id","ok"}}) -> treo trên đóm lửa -> thả bóng
+-> bay một vòng KIỂM TRA quanh đám cháy -> RTL. "Không phải lửa" = RTL như không thấy.
+Mỗi bước báo STATUSTEXT lên GCS (tab Thông báo).
 
 Cú chấm là người vận hành GIAO một việc có giới hạn. Gạt khỏi GUIDED (cần RC, nút
 mode của GUI) hay nút đỏ lúc nào thì node buông lúc đó: không thả, không đổi mode.
@@ -70,6 +72,23 @@ def parse_fire_cmd(raw):
     if any(a is not None and not math.isfinite(a) for a in (alt, drop, radius)):
         return None
     return lat, lon, alt, drop, radius
+
+
+def parse_confirm(raw, ask_id):
+    """JSON /gcs/command -> True (thả) / False (không phải lửa) / None (lệnh khác, rác, hoặc trả
+    lời cho LẦN HỎI KHÁC). id phải khớp: một cú trượt đến trễ qua 4G không được thả cho đóm
+    lửa sau mà người vận hành chưa nhìn."""
+    try:
+        msg = json.loads(raw)
+        if msg.get('action') != 'fire_confirm':
+            return None
+        args = msg['args']
+        ok, i = args['ok'], args['id']
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return None
+    if not isinstance(ok, bool) or isinstance(i, bool) or i != ask_id:
+        return None
+    return ok
 
 
 def pick_radius(radius, default, max_r):
@@ -186,12 +205,20 @@ class FireMission(GuidedNode):
         # ground_range chỉ chạy lúc hạ để thả: bay ngang/RTL qua nhà cao ảnh không phải một mặt
         self.ground_on = self.create_publisher(Bool, '/fire/ground_enable', latched)
         self.ground_on.publish(Bool(data=False))
+        # Đang chờ người vận hành xác nhận thả: JSON {"id","x","y"}, "" = không hỏi gì.
+        self.ask_pub = self.create_publisher(String, '/fire/ask', latched)
+        self.ask_pub.publish(String(data=''))
+        self.ask_id, self.answer = 0, None
 
     def _on_target(self, msg):
         self.target = msg
         self.seen += 1
 
     def _on_cmd(self, msg):
+        ok = parse_confirm(msg.data, self.ask_id)
+        if ok is not None and self.answer is None:
+            self.answer = ok
+            return
         cmd = parse_fire_cmd(msg.data)
         if cmd is None:
             return  # lệnh khác của GUI, không phải việc của node này
@@ -372,6 +399,24 @@ class FireMission(GuidedNode):
                 since = None
         return None
 
+    def ask_operator(self):
+        """Thấy lửa: TREO tại chỗ đang đứng, chờ người vận hành nhìn video (có hộp lửa) rồi trượt
+        xác nhận trên GUI. True = thả, False = không phải lửa, None = phi công giành lái.
+        Chờ NGƯỜI nên không có hạn (như chờ điểm chấm); pin yếu thì failsafe pin của FC lo."""
+        p, t = self.pose.pose.position, self.target.point
+        x, y, z = p.x, p.y, p.z
+        self.ask_id += 1
+        self.answer = None
+        self.ask_pub.publish(String(data=json.dumps(
+            {'id': self.ask_id, 'x': round(t.x, 1), 'y': round(t.y, 1)})))
+        self.notify('THAY LUA: treo, cho xac nhan tren GUI', StatusText.WARNING)
+        try:
+            res = self.fly_to(x, y, z, tol=-1.0, timeout=float('inf'),
+                              stop=lambda: self.answer is not None)
+        finally:
+            self.ask_pub.publish(String(data=''))   # GUI cất thanh trượt
+        return None if res == 'pilot' else self.answer
+
     def gripper(self, action):
         req = CommandLong.Request(command=MAV_CMD_DO_GRIPPER, param1=1.0, param2=float(action))
         r = self._call(self.cmd_cli, req)
@@ -421,7 +466,11 @@ class FireMission(GuidedNode):
             return self.give_up('dang tim' if pilot_has_it(self.state)
                                 else f'Khong thay lua trong {self.search_radius:.0f} m')
         t = self.target.point
-        self.notify(f'Thay lua ({t.x:.1f}, {t.y:.1f}) x{self.zoom:g}, ha {self.drop_alt:.0f} m tha')
+        self.notify(f'Thay lua ({t.x:.1f}, {t.y:.1f}) x{self.zoom:g}')
+        ok = self.ask_operator()
+        if not ok:
+            return self.give_up('Cho xac nhan' if ok is None else 'Khong phai lua (nguoi van hanh)')
+        self.notify(f'Da xac nhan, ha {self.drop_alt:.0f} m tha')
         # WPNAV_SPEED_DN 1.5 m/s: hạ 100 -> 20 m mất ~55 s, cộng thời gian canh lại tâm.
         err = self.hold_over_fire(timeout=60.0 + self.search_alt)
         if err is None:
@@ -502,6 +551,15 @@ def _selfcheck():
                 '{"action":"fire_target","args":{"lat":1,"lon":2,"alt":5,"drop":"inf"}}',
                 '{"action":"fire_target","args":{"lat":1,"lon":2,"radius":"NaN"}}']:
         assert parse_fire_cmd(bad) is None, bad
+
+    # xác nhận thả: chỉ đúng action + ok bool + id CỦA LẦN HỎI NÀY
+    c = lambda ok, i: json.dumps({'action': 'fire_confirm', 'args': {'ok': ok, 'id': i}})  # noqa: E731
+    assert parse_confirm(c(True, 3), 3) is True and parse_confirm(c(False, 3), 3) is False
+    assert parse_confirm(c(True, 2), 3) is None, 'trượt cho lần hỏi trước tới trễ -> không thả'
+    assert parse_confirm(ok, 3) is None, 'lệnh fire_target không phải câu trả lời'
+    for bad in [c('yes', 3), c(1, 3), c(True, True), c(True, '3'), 'rac', '[]',
+                '{"action":"fire_confirm"}', '{"action":"fire_confirm","args":{"ok":true}}']:
+        assert parse_confirm(bad, 3) is None, bad
 
     # phạm vi tìm: 0 = chỉ treo ở điểm chấm; quá max_search_radius / âm = từ chối
     assert pick_radius(None, 2.0, 10.0) == 2.0, 'GUI cũ: search_radius của node'

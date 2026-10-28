@@ -27,6 +27,13 @@ khi Jetson bật lại.
 
 ## 1. Đã sửa, chưa kiểm đủ
 
+- [ ] **Xác nhận thả trên GUI** (user 29/10/2026): thấy lửa -> TREO tại chỗ, `/fire/ask` {id,x,y} ->
+  bridge -> `mission`.ask -> GUI hiện thanh trượt "THẢ BÓNG" + nút "Không phải lửa — về nhà" (RTL);
+  trả lời `fire_confirm` {id, ok}, id sai (trượt trễ cho lần hỏi trước) bị bỏ. Không có hạn chờ (pin yếu
+  thì failsafe FC). **Sim e2e 29/10 đạt** (WebSocket như GUI): thấy lửa 95 s -> treo, 8 s trôi 0.05 m
+  không tự thả; id sai bị bỏ; id đúng -> xoá câu hỏi (node + bridge) -> thả 5 s sau, lệch 0.01 m.
+  GUI: `tools/selfcheck.py` (hiện/ẩn, trượt nửa chừng không gửi, bridge im 3 s thì ẩn). Chưa: drone
+  thật, nhánh "Không phải lửa" chưa bay sim (chỉ là `give_up` -> RTL có sẵn).
 - [ ] **Thả bằng `DO_GRIPPER`** (26/10/2026, thay `DO_SET_SERVO 9 1900`: FC thật giờ để servo ở
   SERVO16 = gripper, SERVO9_FUNCTION 0 -> lệnh cũ không tới servo). SITL đạt: GRAB -> SERVO9 1900,
   RELEASE -> 1100. **Thực tế 23:11 đạt:** từ Jetson (pymavlink, ttyACM0) GRAB -> SERVO16 1900 sau
