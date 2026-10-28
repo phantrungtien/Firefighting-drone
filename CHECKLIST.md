@@ -152,7 +152,10 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   lệnh đổi tần số của GCS) + `MAV1_POSITION/EXTRA1/EXTRA2/RAW_SENS` 10, `MAV1_EXT_STAT/EXTRA3` 2
   (cổng USB = MAVROS). Không có bit 2 thì Mission Planner cắm USB xin luồng mặc định và ArduPilot
   LƯU đè (ghi 10 -> khởi động lại còn 4). Bit 2 bật: giữ 10 qua khởi động lại (user kiểm trên MP).
-  CHƯA: đo tần số MAVROS trên Jetson khi chưa bật task (phải ~10 Hz); `RTL_ALT_M` -> 5.
+  Tần số MAVROS ĐẠT (đo 29/10/2026 02:25 trên Jetson, chưa bật task): `global_position/rel_alt` 10.0 Hz,
+  `imu/data` 10.0 Hz, `state` 1 Hz. (`local_position/pose` lúc đó im vì GPS đang tháo trong nhà -> EKF
+  chưa init; ra bãi cắm GPS phải thấy ~10 Hz.) CHƯA (user chỉnh trên Mission Planner ở bãi 30/10):
+  `RTL_ALT_M` 3 -> 5, `BATT_MONITOR` 3, `GRIP_NEUTRAL` 1100 (1900 = cơ cấu MỞ lúc FC khởi động).
   Tablet đọc lúc bay 27/10 08:18 (PARAM_VALUE trong tlog): `RTL_ALT_M` **3** (không phải 2),
   `BATT_LOW_VOLT` 21.6, `BATT_FS_LOW_ACT` 2 (RTL), `BATT_FS_CRT_ACT` 1 (LAND), `FS_THR_ENABLE` 3,
   `FS_GCS_ENABLE` 0, `FENCE_ENABLE` 0, `WP_SPD` 1. Không còn PreArm "Compasses inconsistent".
@@ -182,6 +185,8 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   1.2` (`HighlightAE`, run_gui.py): exposure 0.3-10 ms + gain 0-100, bước x1.15 mỗi 0.5 s (~2.5 s/EV),
   median 95-114 thì không hạ dù nửa khung cháy; trong phòng 28/10 kịch trần 10 ms + gain 100 mà
   median 50-90 -> đáy 0.3 ms có thể không đủ cho nắng. Số chỉnh trong phòng 15/10 cho webcam cũ.
-  CHƯA ĐO ngoài trời: log Jetson 27/10 mất vì journald không lưu đĩa (không có `/var/log/journal`,
-  rút pin là mất; giờ journal trước NTP là giờ giả). Cần: bật lưu journal, rồi bỏ `--hl-ae` (AE
-  camera) hoặc sửa HighlightAE, ra trời đọc dòng `[ae]` (`exposure 3 gain 0 chay >10%` = đáy không đủ).
+  ĐÃ SỬA 29/10/2026 (jetson `92be1ea`, `268826b`): nguyên nhân thật là HighlightAE ghi gain 0 mà
+  XC-TECH 4K hiểu là TỰ chỉnh gain -> đánh nhau với AE, video trắng/tối xen kẽ chu kỳ ~1 s (quay màn
+  hình tablet). Service giờ BỎ `--hl-ae`/`--gamma` -> camera tự phơi sáng (trong phòng: che/rọi đèn
+  thì ~1.5 s về median ~150, không nháy). journald Jetson đã lưu đĩa từ 29/10 01:11 (log bay không
+  còn mất khi rút pin). CHƯA: ra nắng xem video còn trắng / nháy không.
