@@ -293,7 +293,8 @@ class FireMission(GuidedNode):
         if self.state.armed and self.fly_to(p.x, p.y, self.search_alt,
                                             timeout=30.0 + self.search_alt) == 'pilot':
             return
-        self.set_mode('RTL')
+        if not self.ensure_mode('RTL', timeout=240.0) and self.state.armed and self.state.mode == 'GUIDED':
+            self.notify('RTL KHONG VAO DUOC: phi cong lay lai', StatusText.CRITICAL)
 
     def dist_to(self, x, y, z):
         p = self.pose.pose.position

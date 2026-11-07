@@ -32,6 +32,11 @@ def arm_gate(prearm_ok, waited, blind_after):
     return prearm_ok
 
 
+def mode_retry_ok(state, start_mode):
+    """ensure_mode còn được gửi lại không: còn bay VÀ mode vẫn là mode lúc bắt đầu (chưa ai đổi)."""
+    return state.armed and state.mode == start_mode
+
+
 class GuidedNode(Node):
     def __init__(self, name):
         super().__init__(name)
@@ -87,6 +92,24 @@ class GuidedNode(Node):
         r = self._call(self.mode_cli, SetMode.Request(custom_mode=mode))
         return bool(r and r.mode_sent)
 
+    def ensure_mode(self, mode, timeout=240.0, every=2.0):
+        """set_mode tới khi /mavros/state XÁC NHẬN `mode`. Gọi một lần có thể rơi: sim 07/11/2026
+        'không thấy service /mavros/set_mode' lúc vào RTL -> drone treo GUIDED 4 phút rồi task bỏ.
+        Thôi thử khi người khác đã đổi mode (phi công giành lái) hoặc đã disarm: không giằng lái."""
+        start, end, last = self.state.mode, time.time() + timeout, 0.0
+        while rclpy.ok() and time.time() < end:
+            rclpy.spin_once(self, timeout_sec=0.1)
+            if self.state.mode == mode:
+                return True
+            if not mode_retry_ok(self.state, start):
+                return False
+            if time.time() - last >= every:
+                if last:
+                    self.get_logger().warning(f'{mode} chua vao (dang {self.state.mode}), thu lai')
+                last = time.time()
+                self.set_mode(mode)
+        return False
+
     def arm(self, mode='GUIDED', timeout=90.0, blind_after=15.0):
         """Chờ prearm qua + đúng mode (xác nhận qua /mavros/state), rồi arm."""
         start = time.time()
@@ -117,7 +140,7 @@ class GuidedNode(Node):
         return self.wait_until(lambda: abs(self.alt - alt) < tol, timeout)
 
     def land(self, timeout=90.0):
-        self.set_mode('LAND')
+        self.ensure_mode('LAND', timeout)
         return self.wait_until(lambda: not self.state.armed, timeout)
 
 
@@ -157,6 +180,28 @@ def _selfcheck():
     assert not arm_gate(False, 600, 15), 'chờ lâu không phải lý do bỏ qua prearm'
     assert not arm_gate(None, 14.9, 15) and arm_gate(None, 15, 15)
     assert 1467088303 & PREARM_CHECK_BIT  # sensors_health thật của ArduPilot đã sẵn sàng
+    # ensure_mode: lần gọi đầu rơi (service vắng) -> thử lại tới khi state báo RTL
+    from types import SimpleNamespace as NS
+    calls = []
+
+    def fake_set(mode):
+        calls.append(mode)
+        if len(calls) >= 3:
+            fake.state.mode = mode
+    fake = NS(state=NS(mode='GUIDED', armed=True), set_mode=fake_set,
+              get_logger=lambda: NS(warning=lambda *_: None))
+    ok, spin = rclpy.ok, rclpy.spin_once
+    rclpy.ok, rclpy.spin_once = (lambda: True), (lambda *a, **k: None)
+    try:
+        assert GuidedNode.ensure_mode(fake, 'RTL', timeout=2.0, every=0.0) and calls == ['RTL'] * 3
+        fake.state.mode, calls[:] = 'GUIDED', []
+        fake.set_mode = lambda m: setattr(fake.state, 'mode', 'POSHOLD')  # phi công gạt sang POSHOLD
+        assert not GuidedNode.ensure_mode(fake, 'RTL', timeout=2.0, every=0.0)
+        assert fake.state.mode == 'POSHOLD', 'không giằng lại lái'
+        fake.state.mode, fake.state.armed = 'GUIDED', False
+        assert not GuidedNode.ensure_mode(fake, 'RTL', timeout=2.0, every=0.0)  # đã disarm: thôi
+    finally:
+        rclpy.ok, rclpy.spin_once = ok, spin
     print('guided selfcheck OK')
 
 
