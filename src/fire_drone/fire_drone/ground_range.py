@@ -85,8 +85,8 @@ def nearest(surfs, dh):
 
 
 class GroundRange(Node):
-    def __init__(self):
-        super().__init__('ground_range')
+    def __init__(self, **kw):  # kw -> Node: run_gui (Jetson) truyen parameter_overrides camera_dz = z cua --cam-offset
+        super().__init__('ground_range', **kw)
         p = lambda n, v: self.declare_parameter(n, v).value  # noqa: E731
         self.work_w = p('work_width', 960)          # co khung về đây trước khi bám điểm
         self.inner = p('inner_frac', 0.08)          # đĩa giữa bỏ qua (đám cháy) / bề ngang
