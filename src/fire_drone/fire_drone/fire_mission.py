@@ -48,6 +48,20 @@ def pilot_has_it(state):
     return state.armed and state.mode != 'GUIDED'
 
 
+def fc_block(connected, armed, prearm_ok, has_pos):
+    """FC chưa sẵn sàng thì KHÔNG nhận điểm cháy, không ARM, không đổi mode - chỉ báo lý do (= luật
+    Commands.auto_block của GUI_NATIVE f70cea3). Đo 07/11/2026 15:18: FC 'PreArm: GPS 1: Bad fix' +
+    'Radio failsafe on' mà task vẫn nhận điểm, node đợi prearm trong arm() -> lỗi vừa hết là tự ARM cất
+    cánh. Đã ARM (điểm mới giữa task) chỉ cần vị trí. Trả lý do ngắn (STATUSTEXT 50 byte) hoặc None."""
+    if not connected:
+        return 'FC chua noi'
+    if not has_pos:
+        return 'chua co vi tri GPS'
+    if not armed and prearm_ok is not True:
+        return 'PreArm loi' if prearm_ok is False else 'chua biet PreArm'
+    return None
+
+
 def parse_fire_cmd(raw):
     """JSON từ /gcs/command -> (lat, lon, alt, drop, radius), hoặc None nếu không hợp lệ.
     alt = độ cao bay, drop = hạ cách lửa bao nhiêu m để thả, radius = phạm vi tìm quanh điểm
@@ -184,7 +198,7 @@ class FireMission(GuidedNode):
         self.driving = False                        # node đã arm/lái drone (không chỉ đang chờ chấm)
         self.seen = 0                               # số lần detector báo, để vòng kiểm tra đếm
         self.hint = None                            # (lat, lon) người vận hành chấm
-        self.fix = None
+        self.fix, self.fix_t = None, 0.0
         self.vel = TwistStamped()
         self.yaw = 0.0
         self.create_subscription(PointStamped, '/fire/target', self._on_target, 10)
@@ -193,7 +207,7 @@ class FireMission(GuidedNode):
                                  lambda m: self.ground.append(m.data), 10)
         self.create_subscription(String, '/gcs/command', self._on_cmd, 10)
         self.create_subscription(NavSatFix, '/mavros/global_position/global',
-                                 self._set('fix'), qos_profile_sensor_data)
+                                 self._on_fix, qos_profile_sensor_data)
         self.create_subscription(TwistStamped, '/mavros/local_position/velocity_local',
                                  self._set('vel'), qos_profile_sensor_data)
         self.sp_pub = self.create_publisher(PoseStamped, '/mavros/setpoint_position/local', 10)
@@ -238,6 +252,18 @@ class FireMission(GuidedNode):
         # Bay đi/về/tìm ở `alt`, hạ xuống `drop` m trên mặt quanh đóm lửa rồi thả.
         self.search_alt, self.drop_alt = alt, drop
         self.hint = (lat, lon)
+
+    def fc_why(self):
+        """Lý do FC chưa sẵn sàng (fc_block) hoặc None. Vị trí = pose < 1 s + GPS có fix < 2 s."""
+        now = time.monotonic()
+        has_pos = now - self.pose_t < 1.0 and self.fix is not None and now - self.fix_t < 2.0
+        return fc_block(self.state.connected, self.state.armed, self.prearm_ok, has_pos)
+
+    def _on_fix(self, msg):
+        # CHI giu goi CO fix: sim 07/11/2026 1/9 goi status -1 xen ke (va goi (0, 0) cua MAVROS khac cung domain)
+        # -> lay goi cuoi la luc co luc khong vi tri, hint_local ra diem cham xa 17 000 km.
+        if msg.status.status >= 0 and (msg.latitude or msg.longitude):
+            self.fix, self.fix_t = msg, time.monotonic()
 
     def notify(self, text, severity=StatusText.INFO):
         """Log + STATUSTEXT lên GCS. MAVLink cắt ở 50 byte nên giữ chữ không dấu, ngắn."""
@@ -437,10 +463,17 @@ class FireMission(GuidedNode):
         if not self.wait_until(lambda: self.pose.header.stamp.sec > 0 and self.fix, 120.0):
             return log.error('khong co pose/GPS')
         self.notify('San sang. Cham-giu ban do GUI -> "Chua chay tai day"')  # đúng chữ trên nút GUI (touch.wp_fire)
-        # Chờ NGƯỜI, không phải chờ máy - không có hạn là đúng.
-        self.wait_until(lambda: self.hint is not None, float('inf'))
-        if not rclpy.ok():
-            return False
+        # Chờ NGƯỜI, không phải chờ máy - không có hạn là đúng. Kiểm FC Ở ĐÂY chứ không trong _on_cmd:
+        # GUI giao điểm ~1 s sau khi bật task, node chưa nhận /mavros/state nào -> 'FC chua noi' nhầm (e2e 07/11).
+        while True:
+            self.wait_until(lambda: self.hint is not None, float('inf'))
+            if not rclpy.ok():
+                return False
+            why = self.fc_why()
+            if not why:
+                break
+            self.notify(f'Tu choi: {why}', StatusText.WARNING)  # không ARM, không đổi mode: bỏ điểm, chờ điểm mới
+            self.hint = None
         hx, hy = self.hint_local()
         p = self.pose.pose.position
         if math.hypot(hx - p.x, hy - p.y) > self.max_range:
@@ -451,7 +484,8 @@ class FireMission(GuidedNode):
         self.target, self.seen = None, 0  # mục tiêu cũ (nếu có) không được dẫn đường
 
         self.driving = True
-        if not self.state.armed and not self.arm():
+        # 15 s chứ không 90 s mặc định: FC hỏng prearm giữa chừng thì THÔI, không ngồi đợi lỗi hết rồi tự ARM
+        if not self.state.armed and not self.arm(timeout=15.0):
             return self.give_up('Arm that bai')
         if self.state.mode != 'GUIDED':
             self.set_mode('GUIDED')       # người vận hành vừa giao việc = đã chọn
@@ -607,6 +641,15 @@ def _selfcheck():
     assert all(abs(math.hypot(x - 18, y - 12) - 8) < 1e-9 for x, y in pts)
     assert pts[0] == pts[-1] or math.dist(pts[0], pts[-1]) < 1e-9, 'vòng phải khép kín'
     assert max(math.dist(a, b) for a, b in zip(pts, pts[1:])) <= 6.0 + 1e-9
+    # FC chưa sẵn sàng -> từ chối điểm cháy (07/11/2026 15:18: GPS Bad fix + Radio failsafe)
+    assert fc_block(False, False, True, True) == 'FC chua noi'
+    assert fc_block(True, False, True, False) == 'chua co vi tri GPS'
+    assert fc_block(True, False, False, True) == 'PreArm loi'
+    assert fc_block(True, False, None, True) == 'chua biet PreArm'
+    assert fc_block(True, False, True, True) is None
+    assert fc_block(True, True, False, True) is None, 'da ARM (diem moi giua task): chi can vi tri'
+    assert fc_block(True, True, None, False) == 'chua co vi tri GPS'
+    assert all(len('FIRE: Tu choi: ' + w) <= 50 for w in ('FC chua noi', 'chua co vi tri GPS', 'chua biet PreArm'))
     print('fire_mission selfcheck OK')
 
 

@@ -67,6 +67,15 @@ khi Jetson bật lại.
   báo đỏ sau 0.8 s; kill -9 -> báo sau ~1 s. Sửa luôn bridge chờ 6 s mỗi lần huỷ (zombie `ros2
   run`), Jetson còn 0.9 s. ⚠ kill -9 / MAVROS chết: không gửi được setpoint treo -> drone bay
   NỐT tới điểm đang bay tới rồi mới treo. Chưa có: tự RTL/LOITER (chỉ báo).
+- [x] **2.5b FC chưa sẵn sàng thì không làm gì** (07/11/2026, sau vụ 15:18: FC 'GPS 1: Bad fix' + 'Radio
+  failsafe on' mà task vẫn nhận điểm, node đợi prearm trong arm()): `fire_mission` nhận điểm cháy xong mới kiểm
+  `fc_block` (= luật GUI f70cea3: FC nối, có vị trí GPS, chưa ARM thì PreArm phải qua) -> chưa sẵn sàng thì báo
+  "Tu choi: ...", BỎ điểm, chờ điểm mới; không ARM, không đổi mode. arm() hạn 15 s (cũ 90 s). Chỉ giữ gói GPS
+  có fix. Sim domain 42: PreArm lỗi (BATT_ARM_VOLT) -> "Tu choi: PreArm loi"; tắt GPS -> "Tu choi: chua co vi tri
+  GPS"; cả hai FC không ARM. GUI giao điểm lúc node vừa bật (chưa có /mavros/state) vẫn bay trọn sau "San sang".
+  ⚠ PHÁT HIỆN CÙNG LÚC: sim laptop (domain 0 mặc định) và drone THẬT (Jetson CycloneDDS qua Tailscale, Peer =
+  laptop) là MỘT đồ thị ROS -> sim nhận GPS (0, 0) của MAVROS thật. run_sim.sh giờ ROS_DOMAIN_ID=42. Đã soát
+  journal Jetson: không có gripper / ARM / đổi mode nào trùng các lần chạy sim hôm nay.
 - [ ] **2.6 Từ chối / thất bại:** chấm xa > 300 m, `alt` ngoài 5–120 m, không thấy ở mọi mức
   zoom (phải trả zoom x1 rồi RTL) — mới có selfcheck, chưa bay.
 - [ ] **2.7 Đám cháy trên dốc / đồi:** `ground_range` giả định vùng quanh lửa phẳng; `alt` tính so

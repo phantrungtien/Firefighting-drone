@@ -42,11 +42,11 @@ class GuidedNode(Node):
         super().__init__(name)
         self.state = State()
         self.pose = PoseStamped()
+        self.pose_t = 0.0           # monotonic lúc nhận pose cuối (pose cũ = EKF mất vị trí / MAVROS chết)
         self.prearm_ok = None
         qos = qos_profile_sensor_data  # MAVROS publish BEST_EFFORT
         self.create_subscription(State, '/mavros/state', self._set('state'), qos)
-        self.create_subscription(PoseStamped, '/mavros/local_position/pose',
-                                 self._set('pose'), qos)
+        self.create_subscription(PoseStamped, '/mavros/local_position/pose', self._on_pose, qos)
         self.create_subscription(SysStatus, '/mavros/sys_status', self._sys_cb, qos)
         self.arm_cli = self.create_client(CommandBool, '/mavros/cmd/arming')
         self.mode_cli = self.create_client(SetMode, '/mavros/set_mode')
@@ -55,6 +55,9 @@ class GuidedNode(Node):
 
     def _set(self, attr):
         return lambda msg: setattr(self, attr, msg)
+
+    def _on_pose(self, msg):
+        self.pose, self.pose_t = msg, time.monotonic()
 
     def _sys_cb(self, msg):
         # ArduPilot bật bit này đúng lúc mọi prearm check qua.
