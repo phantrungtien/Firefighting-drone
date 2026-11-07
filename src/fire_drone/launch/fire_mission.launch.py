@@ -18,6 +18,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -29,6 +30,8 @@ def generate_launch_description():
         DeclareLaunchArgument('mission', default_value='true'),
         DeclareLaunchArgument('real', default_value='false'),
         DeclareLaunchArgument('yolo', default_value='false'),
+        # yolo:=true: camera_roll cua fire_locator (= --cam-roll run_gui), bai thu camera nghieng
+        DeclareLaunchArgument('cam_roll', default_value='0.0'),
         # Drone thật 23/10/2026: vòng tìm 2 m (sim 24 m) - nhỏ hơn bước vòng nên ở x1..x3 chỉ treo
         # ở điểm chấm rồi zoom dần; x4/x5 bay một vòng nhỏ 2 / 1.6 m (ở 20 m).
         # yolo:=true (sim bằng chuỗi drone thật) cũng 2 m: 26/10/2026 vòng 24 m ở 5 m đâm toà nhà 100 m.
@@ -61,12 +64,15 @@ def generate_launch_description():
         # camera_offset (x trước, y trái, z lên; tâm FC -> ống kính) đo bằng thước 27/10/2026 (user): trước
         # 20 cm, giữa, thấp 2 cm. Hướng camera kiểm cùng ngày: mép trên ảnh = mũi, mép phải = phải (đúng
         # R_OPT_TO_BODY). Sim giữ mặc định của fire_locator = rgb_cam_link firehawk_x4.
+        # camera_roll -8.2°: thả thật 29/10/2026 treo 5.5 m, bóng chạm đất 0.8 m TRÁI vòng ngắm (1 lần thả).
+        # Phải khớp --cam-roll của run_gui (jetson). Kiểm lại bằng dây dọi / lần thả sau.
         Node(package='fire_drone', executable='fire_locator', output='screen',
-             parameters=[{'min_score': 0.2, 'camera_offset': [0.20, 0.0, -0.02]}],
+             parameters=[{'min_score': 0.2, 'camera_offset': [0.20, 0.0, -0.02], 'camera_roll': -8.2}],
              condition=IfCondition(LaunchConfiguration('real'))),
         Node(package='fire_drone', executable='fire_locator', output='screen',
              parameters=[{'min_score': 0.2, 'calib': PathJoinSubstitution(
-                 [FindPackageShare('fire_drone'), 'config', 'sim_cam_1920x1080.yaml'])}],
+                 [FindPackageShare('fire_drone'), 'config', 'sim_cam_1920x1080.yaml']),
+                 'camera_roll': ParameterValue(LaunchConfiguration('cam_roll'), value_type=float)}],
              condition=IfCondition(LaunchConfiguration('yolo'))),
         Node(package='fire_drone', executable='fire_mission', output='screen',
              parameters=[{'search_radius': LaunchConfiguration('search_radius'),

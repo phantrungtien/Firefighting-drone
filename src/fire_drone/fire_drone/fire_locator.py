@@ -40,19 +40,26 @@ def pixel_ray(u, v, K, D):
     return r / np.linalg.norm(r)
 
 
-def ray_ground(ray_opt, drone_pos, R_body, cam_off, ground_z):
+def cam_to_body(roll_deg=0.0):
+    """R_OPT_TO_BODY của camera gắn NGHIÊNG quanh trục dọc thân (x trước), độ, quay phải tay.
+    Âm = trục quang chúc sang phải thân -> điểm ngay dưới drone hiện LỆCH TRÁI tâm ảnh."""
+    c, s = np.cos(np.radians(roll_deg)), np.sin(np.radians(roll_deg))
+    return np.array([[1.0, 0.0, 0.0], [0.0, c, -s], [0.0, s, c]]) @ R_OPT_TO_BODY
+
+
+def ray_ground(ray_opt, drone_pos, R_body, cam_off, ground_z, R_cam=R_OPT_TO_BODY):
     """Tia hệ quang -> điểm cắt mặt z = ground_z trong ENU. None nếu tia không chúc xuống."""
     cam = drone_pos + R_body @ cam_off
-    d = R_body @ (R_OPT_TO_BODY @ ray_opt)
+    d = R_body @ (R_cam @ ray_opt)
     if d[2] > -0.05:  # nằm ngang trên 87° lệch trục: chạm đất ở vô cực, số vô nghĩa
         return None
     t = (ground_z - cam[2]) / d[2]
     return cam + t * d if t > 0 else None
 
 
-def ground_pixel(pt, drone_pos, R_body, cam_off, K, D):
+def ground_pixel(pt, drone_pos, R_body, cam_off, K, D, R_cam=R_OPT_TO_BODY):
     """Điểm ENU -> điểm ảnh khung calib (ngược ray_ground). None nếu sau ống kính hay xa ngoài khung."""
-    opt = R_OPT_TO_BODY.T @ (R_body.T @ (np.asarray(pt, float) - drone_pos - R_body @ cam_off))
+    opt = R_cam.T @ (R_body.T @ (np.asarray(pt, float) - drone_pos - R_body @ cam_off))
     # 1.2: khung calib chỉ tới ~0.8 (cx/fx); xa hơn đa thức méo gập ngược điểm vào trong ảnh
     if opt[2] <= 0.05 or abs(opt[0]) > 1.2 * opt[2] or abs(opt[1]) > 1.2 * opt[2]:
         return None
@@ -88,6 +95,7 @@ class FireLocator(Node):
         p = lambda n, v: self.declare_parameter(n, v).value  # noqa: E731
         # Mặc định = rgb_cam_link của firehawk_x4 (sim). Drone thật: số đo 27/10/2026 đặt trong launch real:=true.
         self.cam_off = np.array(p('camera_offset', [0.26, 0.0, -0.18]))
+        self.R_cam = cam_to_body(p('camera_roll', 0.0))   # độ, xem cam_to_body; thật: launch real:=true
         self.confirm = p('confirm_frames', 5)       # YOLO 5 Hz: 1 s
         self.window = p('window', 20)
         self.min_score = p('min_score', 0.35)
@@ -134,7 +142,7 @@ class FireLocator(Node):
         c = best.bbox.center.position
         gz = ground_filter(self.ground)
         e = ray_ground(pixel_ray(c.x, c.y, self.K, self.D), np.array([p.x, p.y, p.z]),
-                       quat_to_rot(q.x, q.y, q.z, q.w), self.cam_off, gz)
+                       quat_to_rot(q.x, q.y, q.z, q.w), self.cam_off, gz, self.R_cam)
         if e is None:
             return
         self.hits.append(e)
@@ -201,6 +209,15 @@ def _selfcheck():
     # trên, 4.2), ~fy*0.2/5 px; điểm sau lưng ống kính / ngang trời -> None
     u, v = ground_pixel([0, 0, 0], np.array([0, 0, 5.0]), R, np.array([0.20, 0, -0.02]), K, D)
     assert abs(u - K[0, 2]) < 15 and 80 < v - K[1, 2] < 120, (u, v)
+    # camera gắn nghiêng -8.2° (thả thật 29/10: bóng chạm đất 0.8 m TRÁI vòng, treo 5.5 m): điểm dưới
+    # drone dịch TRÁI ~f*tan(8.2°) ~ 359 px 4K, dọc gần như giữ; tia <-> điểm ảnh vẫn khớp nhau
+    Rc = cam_to_body(-8.2)
+    u2, v2 = ground_pixel([0, 0, 0], np.array([0, 0, 5.5]), R, np.array([0.20, 0, -0.02]), K, D, Rc)
+    u1, v1 = ground_pixel([0, 0, 0], np.array([0, 0, 5.5]), R, np.array([0.20, 0, -0.02]), K, D)
+    assert -375 < u2 - u1 < -340 and abs(v2 - v1) < 5, (u2 - u1, v2 - v1)
+    tgt, drone = np.array([1.0, -0.5, 0.0]), np.array([0.0, 0.0, 5.0])
+    e = ray_ground(pixel_ray(*ground_pixel(tgt, drone, R, cam_off, K, D, Rc), K, D), drone, R, cam_off, 0.0, Rc)
+    assert np.linalg.norm(e - tgt) < 0.02, e
     assert ground_pixel([0, 0, 6], np.array([0, 0, 5.0]), R, cam_off, K, D) is None
     assert ground_pixel([50, 0, 0], np.array([0, 0, 5.0]), R, cam_off, K, D) is None
     hist = [(100.0 + i * 0.1, i) for i in range(50)]                         # 10 Hz, 100.0 .. 104.9

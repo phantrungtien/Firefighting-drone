@@ -125,6 +125,19 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   trên đất). Treo 5 m: vòng dưới '+' ~28 px (khung 1280x720); trôi 1 m/s -> vòng lên phía mũi ~1.1 m.
   `test_drop_reticle.py` (jetson) + `fire_locator --selfcheck` đạt. CHƯA: chạy trên Jetson, thả thử
   thật để chỉnh `DROP_DELAY` (0.1 s, đoán) - bóng rơi trước vòng thì tăng, sau vòng thì giảm.
+  **Thả thật 29/10/2026** (quay màn hình tablet `screenrecorder-20261029-090258.mp4` 0:49, tlog 08:46:08,
+  POSHOLD 5.5 m, trôi 0.1 m/s): bóng chạm đất **~0.8 m bên TRÁI** tâm vòng lúc nhả (bán kính vòng 0.5 m
+  -> ngoài vòng), hơi về phía mũi. Không phải `DROP_DELAY` (drone gần đứng yên, lệch ngang thân). Bù
+  nghiêng đúng chiều (vòng bám mặt đất khi lắc, hệ số 0.9-1.04). ~8° ở 5.5 m: nghi camera gắn nghiêng
+  ngang hoặc bóng bị gió cánh / cành làm lệch - 1 lần chưa phân biệt được. Kiểm: kê drone thăng bằng
+  >= 1 m, dây dọi từ móc bóng, xem quả dọi có ở tâm vòng không. Lần thả 4:20 (11 m) video đứng hình, không đo.
+  ĐÃ BÙ 07/11/2026: `camera_roll` -8.2° (fire_locator, launch real:=true) = `--cam-roll` (run_gui, mặc định) -
+  dời cả vòng ngắm LẪN vị trí lửa của fire_locator 0.8 m sang trái ở 5.5 m. CHƯA kiểm: nếu dây dọi rơi
+  đúng vòng CŨ (camera thẳng, bóng bị cơ cấu đẩy lệch) thì trả về 0 và bù ở điểm thả thay vì camera.
+  Sim 07/11 (ANH_A0=1, tham số nhiệm vụ thật `fire_mission_real.yaml`: tìm 5 m, thả 3 m; camera sim TẠM
+  nghiêng -8.2°): KHÔNG bù -> lửa tính ra (-4.0, 10.7) thay vì (-4, 10), bóng lệch tâm A0 0.51 m; BÙ -8.2
+  (`CAM_ROLL=-8.2 ./scripts/run_sim.sh`) -> lửa (-4.0, 10.0), bóng lệch 0.02 m = code bù đúng chiều, cả
+  vòng ngắm lẫn chuỗi tự hành. Camera sim thẳng + bù 0 (20 m): bóng lệch 0.13 m như cũ.
 - [x] **4.3 `run_gui.py` trên Jetson** (23/10/2026): pipeline gst chạy trong tiến trình (`_GstPipe`),
   `/fire/zoom` đổi vùng cắt nvvidconv lúc đang chạy - khung thứ 2 (~70 ms) đã đúng, 31 fps ở x1..x5;
   nhánh xám toàn cảnh 960x540 sau `valve`, chỉ mở khi `/fire/ground_enable`: chính 30 + xám 29 fps.
@@ -189,4 +202,13 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   XC-TECH 4K hiểu là TỰ chỉnh gain -> đánh nhau với AE, video trắng/tối xen kẽ chu kỳ ~1 s (quay màn
   hình tablet). Service giờ BỎ `--hl-ae`/`--gamma` -> camera tự phơi sáng (trong phòng: che/rọi đèn
   thì ~1.5 s về median ~150, không nháy). journald Jetson đã lưu đĩa từ 29/10 01:11 (log bay không
-  còn mất khi rút pin). CHƯA: ra nắng xem video còn trắng / nháy không.
+  còn mất khi rút pin). Bay ngoài trời 29/10/2026 sau bản sửa này (FC log129 09:02, POSHOLD): VẪN trắng một phần + chớp
+  nháy (user 07/11). User đã sửa code tiếp sau đó, CHƯA kiểm. Thay đổi video sau 29/10: jetson `0cf02d3`
+  (IDR mỗi 1 s), `def4272` (1280x720 1200 kbps), GUI `fc45653` (giải mã H.264 phần mềm).
+- [ ] **4.8 Mất hình lúc bay** (bay 29/10/2026, journald Jetson + `video.log` tablet, đọc 07/11): KHÔNG phải 4G
+  (tablet `mat 0.0%`). Camera vào Jetson tụt 29.8 Hz -> 0.2-5 Hz đúng lúc bay, đáp xuống là 29.8 Hz lại:
+  camera gửi khung JPEG cụt (7614 khung/buổi), `run_gui` dừng lại gst 112 lần (`nguon im 2s`), mỗi lần đen
+  thêm ~1.5 s. Nghi: camera XC-TECH USB 2.0 truyền BULK, cắm chung hub 480M với modem 4G + Pixhawk, ảnh 4K
+  mặt đất nắng nhiều chi tiết ~800-970 KB/khung -> tràn. User giữ 4K (07/11). ĐÃ SỬA 07/11 (jetson,
+  `restart_due` + `test_gst_watch.py`): camera còn đẩy khung (kể cả hỏng) thì KHÔNG dừng lại gst, chỉ
+  dừng khi im thật hoặc hỏng liền > 10 s. CHƯA bay thử. Còn cách gốc: cắm modem 4G sang cổng/hub khác.

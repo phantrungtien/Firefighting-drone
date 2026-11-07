@@ -10,6 +10,8 @@
 #   MISSION=1 ./scripts/run_sim.sh  bật luôn node fire_mission (không cần GUI;
 #                                   giao điểm cháy bằng /gcs/command, xem README)
 #   ./scripts/run_sim.sh stop       tắt hết
+#   PARAMS=~/jetson/fire_mission_real.yaml   tham số nhiệm vụ drone thật (bay 5 m, thả 3 m...)
+#   CAM_ROLL=-8.2                   bù camera nghiêng (run_gui + fire_locator, chỉ ANH_A0=1)
 #   ANH_A0=1 ./scripts/run_sim.sh   dò lửa bằng CHÍNH code Jetson (~/jetson/tracking_pi5/run_gui.py:
 #                                   YOLO lửa + Gemini + ground_range) đọc /rgb/image thay ArUco -
 #                                   tờ ảnh lửa A0 ở (-4, 10). run_gui giữ cổng 8080 (video có hộp lửa).
@@ -60,7 +62,7 @@ for i in $(seq 1 300); do ss -ltn | grep -qE ":5760\b" && break; sleep 1; done
 setsid -f ros2 launch fire_drone mavros.launch.py > "$LOG/mavros.log" 2>&1
 M="false"; [ "${MISSION:-0}" = "1" ] && M="true"
 Y="false"; [ "${ANH_A0:-0}" = "1" ] && Y="true"
-setsid -f ros2 launch fire_drone fire_mission.launch.py mission:=$M yolo:=$Y > "$LOG/mission.log" 2>&1
+setsid -f ros2 launch fire_drone fire_mission.launch.py mission:=$M yolo:=$Y cam_roll:="${CAM_ROLL:-0.0}" > "$LOG/mission.log" 2>&1
 
 # Camera sim -> MJPEG cổng 8080 (mjpeg_server của ~/GUI_NATIVE): xem bằng trình
 # duyệt http://<máy này>:8080/stream, qua Tailscale cũng được. Nhẹ hơn hẳn đẩy cả
@@ -74,13 +76,14 @@ if [ "$Y" = "true" ]; then
   # H.264, hl-ae/gamma, stamp) và phần ghi dữ liệu (fire-save). Có khoá Gemini thì
   # bật --fire-verify + --fire-scan 3 như Jetson (~$0.0007/lần): YOLO sót thì Gemini quét cả khung
   # quyết. --fire-picture: tờ A0 là ẢNH lửa, Gemini gọi real=false - chỉ cho bài thử này.
+  # --cam-roll 0: camera sim gắn thẳng (mặc định run_gui -8.2 là của drone thật).
   KEY=$(ls "$J"/hidden-lyceum-*.json 2>/dev/null | head -1)
   (cd "$J/tracking_pi5" && setsid -f python3 -u run_gui.py --detect-only --topic /rgb/image \
      --width 1920 --height 1080 --quality 80 --model yolo11n-960x544-raw.onnx --conf 0.3 --threads 3 \
      --fire-model "$HOME/phantrungtien-fire-detection/models/best_nano_111_640.onnx" \
      --fire-conf 0.2 --fire-threads 1 --fire-hz 5 ${KEY:+--fire-verify "$KEY" --fire-scan 3 --fire-picture} \
      --calib "$WS/install/fire_drone/share/fire_drone/config/sim_cam_1920x1080.yaml" \
-     --cam-offset 0.26,0,-0.18 --cam-to-drop 0.26 \
+     --cam-offset 0.26,0,-0.18 --cam-to-drop 0.26 --cam-roll "${CAM_ROLL:-0}" \
      > "$LOG/run_gui.log" 2>&1)
   echo "Video run_gui:  http://$(tailscale ip -4 2>/dev/null || echo 127.0.0.1):8080/stream"
 elif [ "${VIDEO:-1}" != "0" ] && [ -f "$MJPEG" ]; then
@@ -92,7 +95,7 @@ fi
 # của workspace này, không thì `ros2 run fire_drone ...` của bridge không thấy gói.
 BRIDGE="$HOME/GUI_NATIVE/tools/ros2_bridge.py"
 if [ -f "$BRIDGE" ]; then
-  setsid -f python3 "$BRIDGE" --spawn > "$LOG/bridge.log" 2>&1
+  setsid -f python3 "$BRIDGE" --spawn ${PARAMS:+--mission-params "$PARAMS"} > "$LOG/bridge.log" 2>&1
   echo "GUI_NATIVE:     profile 'SITL' -> nut task Chua chay"
 fi
 echo "Dang chay. Xem:  tail -f $LOG/mission.log"
