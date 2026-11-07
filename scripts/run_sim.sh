@@ -40,6 +40,12 @@ stop() {
 }
 [ "${1:-}" = "stop" ] && { stop; echo "da tat"; exit 0; }
 
+# DOMAIN RIENG cho sim: Jetson (drone THAT) chay CycloneDDS qua Tailscale, khai may nay la Peer, domain 0.
+# Sim cung domain 0 = HAI do thi ROS nhap mot (07/11/2026: /mavros/global_position/global cua sim nhan ca goi
+# (0, 0) cua MAVROS that -> fire_mission tinh diem cham xa 17 000 km; nguoc lai pose/lenh sim co the toi drone
+# that). ros2 topic ... vao sim: ROS_DOMAIN_ID=42. Drone that van o domain 0 nhu cu.
+export ROS_DOMAIN_ID="${SIM_DOMAIN:-42}"
+
 stop; sleep 2
 mkdir -p "$LOG"
 source "$WS/setup.bash"
@@ -98,5 +104,6 @@ if [ -f "$BRIDGE" ]; then
   setsid -f python3 "$BRIDGE" --spawn ${PARAMS:+--mission-params "$PARAMS"} > "$LOG/bridge.log" 2>&1
   echo "GUI_NATIVE:     profile 'SITL' -> nut task Chua chay"
 fi
+echo "ROS sim:        ROS_DOMAIN_ID=$ROS_DOMAIN_ID (tach drone that o domain 0)"
 echo "Dang chay. Xem:  tail -f $LOG/mission.log"
 echo "Tat:            $WS/scripts/run_sim.sh stop"
