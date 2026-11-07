@@ -69,10 +69,11 @@ root = view.rootObject()
 slider = root.findChild(QQuickItem, "slider")
 
 
-def drag(frac=1.0):
-    h = slider.height()
-    a = slider.mapToScene(QPointF(h / 2, h / 2)).toPoint()
-    b = slider.mapToScene(QPointF(h / 2 + frac * (slider.width() - h), h / 2)).toPoint()
+def drag(frac=1.0, sl=None):
+    sl = sl or slider
+    h = sl.height()
+    a = sl.mapToScene(QPointF(h / 2, h / 2)).toPoint()
+    b = sl.mapToScene(QPointF(h / 2 + frac * (sl.width() - h), h / 2)).toPoint()
     QTest.mousePress(view, Qt.LeftButton, Qt.NoModifier, a)
     for i in range(1, 11):
         QTest.mouseMove(view, a + (b - a) * i / 10)
@@ -135,7 +136,10 @@ log("thanh truot:", slider.property("text"))
 drag(1.0)
 log("da truot xac nhan diem chay")
 
-# 4. Theo doi toi khi node xong (RTL + disarm) hoac het 420 s
+# 4. Theo doi toi khi node xong (RTL + disarm) hoac het 420 s. Thay lua -> drone TREO hoi
+#    (29/10/2026): truot "THA BONG" nhu nguoi van hanh, moi cau hoi mot lan.
+ask_box, ask_slider = root.findChild(QQuickItem, "fireAsk"), root.findChild(QQuickItem, "askSlider")
+asked = None
 t_fire = time.time()
 last = 0
 armed_seen = False
@@ -143,6 +147,11 @@ while time.time() - t_fire < 420:
     wait(500)
     armed = v("heartbeat.armed")
     armed_seen |= armed is True
+    ask = st().get("fireAsk")
+    if ask_box.isVisible() and ask != asked:
+        asked = ask
+        log("drone hoi THA BONG:", ask, "-> truot xac nhan")
+        drag(1.0, ask_slider)
     if time.time() - last > 10:
         last = time.time()
         lat, lon = v("position.lat"), v("position.lon")
