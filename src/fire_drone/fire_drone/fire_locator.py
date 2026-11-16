@@ -26,7 +26,7 @@ from geometry_msgs.msg import PointStamped, PoseStamped
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
-from std_msgs.msg import Bool, Float32
+from std_msgs.msg import Bool, Float32, Float64
 from vision_msgs.msg import Detection2DArray
 
 from fire_drone.fire_mission import ground_filter
@@ -103,6 +103,10 @@ class FireLocator(Node):
                                               'config', 'drone_cam_3840x2160.yaml')
         self.K, self.D, *_ = load_calib(path)
         self.pose = None
+        # z local của HOME (mặt đất chỗ ARM) = z local - rel_alt, như run_gui.draw_drop: z local tính từ gốc EKF,
+        # trôi theo khí áp trước khi ARM (bay thật 29/10/2026: -1.00 m) -> coi z = 0 là đất thì lửa ở mép khung
+        # lệch ngang ~0.9 m từ 5 m. Chưa có rel_alt: 0 như cũ.
+        self.z0 = 0.0
         # ~20 s pose gần nhất: hộp Gemini (run_gui --fire-scan, YOLO sót) đến trễ 1-7 s - tia phải đi từ
         # chỗ drone LÚC CHỤP khung (stamp của Detection2DArray), không phải chỗ drone bây giờ.
         self.hist = []
@@ -115,6 +119,8 @@ class FireLocator(Node):
         self.create_subscription(Detection2DArray, '/fire/detections', self.on_dets, 10)
         self.create_subscription(PoseStamped, '/mavros/local_position/pose',
                                  self.on_pose, qos_profile_sensor_data)
+        self.create_subscription(Float64, '/mavros/global_position/rel_alt',
+                                 self.on_rel, qos_profile_sensor_data)
         self.get_logger().info(f'lua YOLO -> /fire/target, K tu {path}')
 
     def on_pose(self, msg):
@@ -122,6 +128,10 @@ class FireLocator(Node):
         self.hist.append((stamp_s(msg.header.stamp), msg.pose))
         if len(self.hist) > 1200:
             del self.hist[:200]
+
+    def on_rel(self, msg):
+        if self.pose is not None:
+            self.z0 = self.pose.position.z - msg.data
 
     def on_enable(self, msg):
         if msg.data:
@@ -140,7 +150,7 @@ class FireLocator(Node):
             return
         p, q = pose.position, pose.orientation
         c = best.bbox.center.position
-        gz = ground_filter(self.ground)
+        gz = self.z0 + ground_filter([g - self.z0 for g in self.ground])   # sàn = chỗ ARM, không phải gốc EKF
         e = ray_ground(pixel_ray(c.x, c.y, self.K, self.D), np.array([p.x, p.y, p.z]),
                        quat_to_rot(q.x, q.y, q.z, q.w), self.cam_off, gz, self.R_cam)
         if e is None:

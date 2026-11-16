@@ -6,6 +6,7 @@ Nhiệm vụ cứu hỏa sau này kế thừa GuidedNode; chạy file này = bà
     ros2 run fire_drone takeoff_test --ros-args -p alt:=5.0
     python3 guided.py --selfcheck      # kiểm cổng arm, không cần ROS chạy
 """
+import statistics
 import sys
 import time
 
@@ -15,6 +16,7 @@ from mavros_msgs.msg import State, SysStatus
 from mavros_msgs.srv import CommandBool, CommandTOL, SetMode, StreamRate
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
+from std_msgs.msg import Float64
 
 # MAV_SYS_STATUS_PREARM_CHECK - mavros_msgs không có hằng số tên này.
 PREARM_CHECK_BIT = 1 << 28
@@ -32,6 +34,15 @@ def arm_gate(prearm_ok, waited, blind_after):
     return prearm_ok
 
 
+def home_z(diffs, need=5):
+    """z local (hệ GỐC EKF) của HOME = mặt đất chỗ ARM, từ các mẫu (z local - rel_alt); chưa đủ `need` mẫu: None.
+    z của /mavros/local_position/pose tính từ gốc EKF (đặt lúc FC có GPS) và TRÔI theo khí áp khi FC nằm chờ,
+    còn home đặt lại mỗi lần ARM. Log bay thật 29/10/2026: z local trên đất lúc ARM +0.03 / +0.35 / -1.00 m
+    -> coi z = 0 là mặt đất thì cất cánh 5 m chờ mãi không "tới" (lệch -1 m), thả 3 m thành 2.67 m (lệch +0.35).
+    Trung vị: một mẫu rel_alt cũ (trước khi home đặt lại) lọt vào không kéo lệch."""
+    return statistics.median(diffs) if len(diffs) >= need else None
+
+
 def mode_retry_ok(state, start_mode):
     """ensure_mode còn được gửi lại không: còn bay VÀ mode vẫn là mode lúc bắt đầu (chưa ai đổi)."""
     return state.armed and state.mode == start_mode
@@ -44,10 +55,13 @@ class GuidedNode(Node):
         self.pose = PoseStamped()
         self.pose_t = 0.0           # monotonic lúc nhận pose cuối (pose cũ = EKF mất vị trí / MAVROS chết)
         self.prearm_ok = None
+        self.z0 = 0.0               # z local của home, xem home_z; latch_ground() đặt sau khi ARM
+        self.rel = []               # các mẫu (z local - rel_alt) gần nhất
         qos = qos_profile_sensor_data  # MAVROS publish BEST_EFFORT
         self.create_subscription(State, '/mavros/state', self._set('state'), qos)
         self.create_subscription(PoseStamped, '/mavros/local_position/pose', self._on_pose, qos)
         self.create_subscription(SysStatus, '/mavros/sys_status', self._sys_cb, qos)
+        self.create_subscription(Float64, '/mavros/global_position/rel_alt', self._on_rel, qos)
         self.arm_cli = self.create_client(CommandBool, '/mavros/cmd/arming')
         self.mode_cli = self.create_client(SetMode, '/mavros/set_mode')
         self.takeoff_cli = self.create_client(CommandTOL, '/mavros/cmd/takeoff')
@@ -64,9 +78,25 @@ class GuidedNode(Node):
         if msg.sensors_present & PREARM_CHECK_BIT:
             self.prearm_ok = bool(msg.sensors_health & PREARM_CHECK_BIT)
 
+    def _on_rel(self, msg):
+        self.rel.append(self.pose.pose.position.z - msg.data)
+        del self.rel[:-10]
+
+    def latch_ground(self, timeout=3.0):
+        """Chốt z0 = z local của home. Gọi SAU khi ARM (home vừa đặt lại; mẫu trước đó là của home cũ)."""
+        self.rel = []
+        self.wait_until(lambda: len(self.rel) >= 5, timeout)
+        z0 = home_z(self.rel)
+        if z0 is None:
+            return False
+        self.z0 = z0
+        self.get_logger().info(f'mat dat cho ARM: z local {z0:+.2f} m')
+        return True
+
     @property
     def alt(self):
-        return self.pose.pose.position.z
+        """Độ cao so với HOME (chỗ ARM) - cùng hệ với lệnh takeoff và rel_alt của FC, KHÔNG phải z local."""
+        return self.pose.pose.position.z - self.z0
 
     def _call(self, cli, req):
         if not cli.wait_for_service(timeout_sec=5.0):
@@ -165,6 +195,8 @@ def main():
             log.error('không có /mavros/local_position/pose - thiếu luồng MAVLink hoặc chưa có GPS?')
         elif not node.arm():
             log.error('arm thất bại')
+        elif not node.latch_ground():
+            log.error('không có /mavros/global_position/rel_alt - không biết mặt đất ở đâu')
         elif not node.takeoff(alt):
             log.error(f'không lên được {alt} m (đang {node.alt:.2f} m)')
         else:
@@ -183,8 +215,13 @@ def _selfcheck():
     assert not arm_gate(False, 600, 15), 'chờ lâu không phải lý do bỏ qua prearm'
     assert not arm_gate(None, 14.9, 15) and arm_gate(None, 15, 15)
     assert 1467088303 & PREARM_CHECK_BIT  # sensors_health thật của ArduPilot đã sẵn sàng
-    # ensure_mode: lần gọi đầu rơi (service vắng) -> thử lại tới khi state báo RTL
+    # mặt đất chỗ ARM: số bay thật 29/10 (z local -1.00 trên đất) -> lên 5 m so với home là z local 4.0
+    assert home_z([-1.0] * 4) is None, 'chưa đủ mẫu thì chưa chốt'
+    assert home_z([-1.0, -1.01, 0.34, -0.99, -1.0]) == -1.0, 'một mẫu của home cũ không kéo lệch'
     from types import SimpleNamespace as NS
+    hov = NS(pose=NS(pose=NS(position=NS(z=4.0))), z0=home_z([-1.0] * 5))
+    assert GuidedNode.alt.fget(hov) == 5.0
+    # ensure_mode: lần gọi đầu rơi (service vắng) -> thử lại tới khi state báo RTL
     calls = []
 
     def fake_set(mode):

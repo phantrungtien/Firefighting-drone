@@ -78,7 +78,7 @@ Tuỳ chọn: `HEADLESS=1` (không cửa sổ Gazebo), `VIDEO=0` (không MJPEG),
    2 s sau RELEASE (1100, như RC5 về) đóng lại.
    Vì sao 20 m: đo 18/10/2026, ở 100 m mã còn ~11 px, PnP lệch 1.8 m ngang / 9 m dọc.
 6. **Vòng kiểm tra** bán kính 6 m ở độ cao thả: đếm số khung còn thấy đóm lửa -> báo
-   "VAN THAY" / "khong con thay" (ở 100 m vòng này báo nhầm hết lửa).
+   "ĐÁNH GIÁ: còn cháy" / "không còn phát hiện cháy" (ở 100 m vòng này báo nhầm hết lửa).
 7. Leo thẳng đứng lại `alt` rồi mới RTL (RTL bay về ở độ cao hiện tại - ở 20 m là đâm
    vào cái nhà lúc đi đã vượt qua). Bỏ task giữa chừng cũng vậy. Chờ disarm, node thoát.
 
@@ -95,11 +95,11 @@ drone treo tại chỗ (GUIDED giữ điểm cuối).
 | | Kết quả |
 |---|---|
 | Task đầy đủ, điểm chấm lệch mã ~6 m | thấy mã sau 4 s tìm, thả lệch 0.01 m, RTL, tổng 126 s |
-| Gạt LOITER giữa đường | node báo "PHI CONG LAI (LOITER): dung task", 12 s sau vẫn LOITER |
+| Gạt LOITER giữa đường | node báo "PHI CÔNG CAN THIỆP (LOITER): dừng", 12 s sau vẫn LOITER |
 | Detector | lệch ~0.02 m khi treo trên mã |
 | Bóng chạm đất | lệch 0.05 m (đo pose bóng 50 Hz) |
 
-Trong sim vòng kiểm tra luôn "VAN THAY" vì tấm ArUco không tắt như lửa thật.
+Trong sim vòng kiểm tra luôn báo "còn cháy" vì tấm ArUco không tắt như lửa thật.
 
 ## Lưu ý mô phỏng
 

@@ -43,6 +43,15 @@ GRIP_OPEN, GRIP_CLOSE = 1, 0   # GRIPPER_ACTION_GRAB, GRIPPER_ACTION_RELEASE
 EARTH_R = 6378137.0
 
 
+TEXT_MAX = 49   # STATUSTEXT 50 byte, MAVROS giữ 1 byte kết chuỗi (đo 16/11/2026: 58 ký tự gửi đi, tới GCS còn 49)
+
+
+def fit_text(text, limit=TEXT_MAX):
+    """Cắt cho vừa `limit` BYTE UTF-8 mà không xẻ đôi ký tự. Chữ có dấu tốn 2-3 byte/ký tự: cắt theo số ký tự
+    thì MAVROS chặt giữa một chữ, GCS hiện ký tự hỏng."""
+    return text.encode()[:limit].decode(errors='ignore')
+
+
 def pilot_has_it(state):
     """Đang bay mà không ở GUIDED = phi công (cần RC / GCS) đã giành lái."""
     return state.armed and state.mode != 'GUIDED'
@@ -52,13 +61,13 @@ def fc_block(connected, armed, prearm_ok, has_pos):
     """FC chưa sẵn sàng thì KHÔNG nhận điểm cháy, không ARM, không đổi mode - chỉ báo lý do (= luật
     Commands.auto_block của GUI_NATIVE f70cea3). Đo 07/11/2026 15:18: FC 'PreArm: GPS 1: Bad fix' +
     'Radio failsafe on' mà task vẫn nhận điểm, node đợi prearm trong arm() -> lỗi vừa hết là tự ARM cất
-    cánh. Đã ARM (điểm mới giữa task) chỉ cần vị trí. Trả lý do ngắn (STATUSTEXT 50 byte) hoặc None."""
+    cánh. Đã ARM (điểm mới giữa task) chỉ cần vị trí. Trả lý do ngắn (STATUSTEXT, xem fit_text) hoặc None."""
     if not connected:
-        return 'FC chua noi'
+        return 'FC chưa kết nối'
     if not has_pos:
-        return 'chua co vi tri GPS'
+        return 'chưa có định vị GPS'
     if not armed and prearm_ok is not True:
-        return 'PreArm loi' if prearm_ok is False else 'chua biet PreArm'
+        return 'PreArm chưa đạt' if prearm_ok is False else 'chưa rõ trạng thái PreArm'
     return None
 
 
@@ -110,7 +119,7 @@ def pick_radius(radius, default, max_r):
     chấm rồi zoom. Thiếu thì search_radius của node."""
     r = default if radius is None else radius
     if not 0 <= r <= max_r:
-        return f'Pham vi tim {r:g} m ngoai 0-{max_r:g} m: tu choi'
+        return f'Từ chối: bán kính {r:g} ngoài 0-{max_r:g} m'
     return r
 
 
@@ -122,9 +131,9 @@ def pick_alts(alt, drop, lo, hi, search_alt, drop_alt):
     alt = search_alt if alt is None else alt
     drop = min(drop_alt, alt) if drop is None else drop
     if not lo <= alt <= hi:
-        return f'Do cao {alt:g} m ngoai {lo:g}-{hi:g} m: tu choi'
+        return f'Từ chối: độ cao {alt:g} ngoài {lo:g}-{hi:g} m'
     if not lo <= drop <= alt:
-        return f'Ha cach lua {drop:g} m ngoai {lo:g}-{alt:g} m: tu choi'
+        return f'Từ chối: mức thả {drop:g} ngoài {lo:g}-{alt:g} m'
     return alt, drop
 
 
@@ -237,7 +246,7 @@ class FireMission(GuidedNode):
         if cmd is None:
             return  # lệnh khác của GUI, không phải việc của node này
         if self.hint is not None:
-            return self.notify('Da co nhiem vu, bo qua diem cham moi', StatusText.WARNING)
+            return self.notify('Đang có nhiệm vụ: không nhận mới', StatusText.WARNING)
         lat, lon, alt, drop, radius = cmd
         # Kiểm HẾT rồi mới đổi gì: lệnh bị từ chối không được để lại ring_step/drop_alt nửa vời.
         ok = pick_alts(alt, drop, self.min_alt, self.max_alt, self.search_alt, self.drop_alt)
@@ -266,14 +275,16 @@ class FireMission(GuidedNode):
             self.fix, self.fix_t = msg, time.monotonic()
 
     def notify(self, text, severity=StatusText.INFO):
-        """Log + STATUSTEXT lên GCS. MAVLink cắt ở 50 byte nên giữ chữ không dấu, ngắn."""
+        """Log + STATUSTEXT lên GCS, chữ CÓ DẤU (user 16/11/2026). Cả câu kèm 'FIRE: ' phải vừa TEXT_MAX byte
+        UTF-8 - viết ngắn; dài hơn thì fit_text cắt đuôi. GCS phải đọc byte gốc dạng UTF-8 (GUI_NATIVE
+        core/adapters/sik.py text_utf8): pymavlink tự giải mã ASCII, chữ có dấu thành ký tự hỏng."""
         # HAI DÒNG RIÊNG, không gộp: rclpy nhớ mức log theo DÒNG gọi, cùng một dòng
         # lúc info lúc warn là ValueError -> node chết giữa task (đã dính 16/10).
         if severity <= StatusText.WARNING:
             self.get_logger().warning(text)
         else:
             self.get_logger().info(text)
-        self.txt_pub.publish(StatusText(severity=severity, text=('FIRE: ' + text)[:50]))
+        self.txt_pub.publish(StatusText(severity=severity, text=fit_text('FIRE: ' + text)))
 
     def set_zoom(self, z):
         if z != self.zoom:
@@ -281,10 +292,11 @@ class FireMission(GuidedNode):
             self.zoom_pub.publish(Float32(data=float(z)))
 
     def send_sp(self, x, y, z):
+        """z = độ cao so với HOME (chỗ ARM) như mọi độ cao trong node này; ra FC mới cộng z0 về hệ gốc EKF."""
         sp = PoseStamped()
         sp.header.stamp = self.get_clock().now().to_msg()
         sp.header.frame_id = 'map'
-        sp.pose.position.x, sp.pose.position.y, sp.pose.position.z = x, y, z
+        sp.pose.position.x, sp.pose.position.y, sp.pose.position.z = x, y, z + self.z0
         sp.pose.orientation.z = math.sin(self.yaw / 2)
         sp.pose.orientation.w = math.cos(self.yaw / 2)
         self.sp_pub.publish(sp)
@@ -293,8 +305,8 @@ class FireMission(GuidedNode):
         """Bỏ nhiệm vụ. Phi công đang lái thì KHÔNG đổi mode - để nguyên cho họ."""
         self.set_zoom(1.0)  # trả góc rộng cho người vận hành, không đụng gì tới bay
         if pilot_has_it(self.state):
-            self.get_logger().warning(f'luc dang: {why}')
-            self.notify(f'PHI CONG LAI ({self.state.mode}): dung task', StatusText.WARNING)
+            self.get_logger().warning(f'lúc đang: {why}')
+            self.notify(f'PHI CÔNG CAN THIỆP ({self.state.mode}): dừng', StatusText.WARNING)
         else:
             self.notify(f'{why} -> RTL', StatusText.WARNING)
             self.climb_rtl()
@@ -308,9 +320,9 @@ class FireMission(GuidedNode):
             return  # chưa lái / phi công đã giành / đã RTL: không phải việc của node
         p = self.pose.pose.position
         for _ in range(3):  # ponytail: 3 lần không chờ ack, topic đã nối sẵn với MAVROS
-            self.send_sp(p.x, p.y, p.z)
+            self.send_sp(p.x, p.y, self.alt)
             rclpy.spin_once(self, timeout_sec=0.05)
-        self.notify('TREO tai cho: task dung ngang', StatusText.CRITICAL)  # <= 50 byte
+        self.notify('GIỮ VỊ TRÍ: nhiệm vụ gián đoạn', StatusText.CRITICAL)
 
     def climb_rtl(self):
         """Leo THẲNG ĐỨNG lại search_alt rồi mới RTL. Cao hơn RTL_ALT thì RTL giữ nguyên độ
@@ -320,11 +332,11 @@ class FireMission(GuidedNode):
                                             timeout=30.0 + self.search_alt) == 'pilot':
             return
         if not self.ensure_mode('RTL', timeout=240.0) and self.state.armed and self.state.mode == 'GUIDED':
-            self.notify('RTL KHONG VAO DUOC: phi cong lay lai', StatusText.CRITICAL)
+            self.notify('KHÔNG VÀO ĐƯỢC RTL: cần phi công', StatusText.CRITICAL)
 
     def dist_to(self, x, y, z):
         p = self.pose.pose.position
-        return math.dist((p.x, p.y, p.z), (x, y, z))
+        return math.dist((p.x, p.y, self.alt), (x, y, z))
 
     def fly_to(self, x, y, z, tol=2.0, timeout=90.0, stop=lambda: False):
         """Stream setpoint tới khi tới nơi / stop() / phi công giành lái / hết giờ.
@@ -360,7 +372,7 @@ class FireMission(GuidedNode):
             z += 1.0
             if z > self.max_zoom + 1e-6:
                 return False
-            self.notify(f'Khong thay, zoom x{z:.0f} tim lai')
+            self.notify(f'Chưa phát hiện: tìm lại ở zoom x{z:.0f}')
             self.set_zoom(z)
 
     def search_once(self, cx, cy, zoom):
@@ -385,8 +397,9 @@ class FireMission(GuidedNode):
         """z mặt GẦN NHẤT quanh đám cháy (mái nhà đang cháy, tán cây... chứ không phải cỏ xa
         hơn) để tính độ cao thả: trung vị 3 số đo ground_range gần nhất (camera 2D, thay lidar;
         KHÔNG dùng z PnP - lửa thật không có cỡ chuẩn như mã ArUco).
-        Chưa có số nào thì coi ngang chỗ cất cánh (z = 0): đất dốc/mái nhà là sai."""
-        return ground_filter(self.ground)
+        Chưa có số nào thì coi ngang chỗ cất cánh (z = 0): đất dốc/mái nhà là sai.
+        ground_range gửi z hệ gốc EKF -> trừ z0 về độ cao so với chỗ ARM (sàn 0 của ground_filter = chỗ ARM)."""
+        return ground_filter([g - self.z0 for g in self.ground])
 
     def hold_over_fire(self, settle=2.0, timeout=90.0):
         """Tới ngay trên đóm lửa, hạ thẳng đứng xuống drop_alt trên mặt đất chỗ đó (mục tiêu
@@ -400,24 +413,24 @@ class FireMission(GuidedNode):
 
     def _hold(self, settle, timeout):
         end, since, measuring = time.time() + timeout, None, False
-        z0, h0 = self.zoom, self.pose.pose.position.z - self.fire_z()
+        zoom0, h0 = self.zoom, self.alt - self.fire_z()
         while rclpy.ok() and time.time() < end:
             t, p, fz = self.target.point, self.pose.pose.position, self.fire_z()
-            self.set_zoom(descent_zoom(z0, h0, p.z - fz))
+            self.set_zoom(descent_zoom(zoom0, h0, self.alt - fz))
             herr = math.hypot(p.x - t.x, p.y - t.y)
             if not measuring and herr <= self.descend_r:
                 # Bật đo mặt đất khi bắt đầu HẠ thẳng đứng, không phải lúc còn bay ngang tới:
                 # bay ngang thì ảnh trôi chứ không nở, số đo đầu sai tới 12 m (18/10/2026).
                 measuring = True
                 self.ground_on.publish(Bool(data=True))
-            z = hold_z(herr, p.z, fz, self.drop_alt, self.descend_r)
+            z = hold_z(herr, self.alt, fz, self.drop_alt, self.descend_r)
             self.send_sp(t.x, t.y, z)
             rclpy.spin_once(self, timeout_sec=0.1)
             if pilot_has_it(self.state):
                 return None
             p, v = self.pose.pose.position, self.vel.twist.linear
             err = math.hypot(p.x - t.x, p.y - t.y)
-            if (err < self.drop_tol and abs(p.z - fz - self.drop_alt) < 0.5
+            if (err < self.drop_tol and abs(self.alt - fz - self.drop_alt) < 0.5
                     and math.hypot(v.x, v.y, v.z) < 0.2):
                 since = since or time.time()
                 if time.time() - since >= settle:
@@ -431,12 +444,12 @@ class FireMission(GuidedNode):
         xác nhận trên GUI. True = thả, False = không phải lửa, None = phi công giành lái.
         Chờ NGƯỜI nên không có hạn (như chờ điểm chấm); pin yếu thì failsafe pin của FC lo."""
         p, t = self.pose.pose.position, self.target.point
-        x, y, z = p.x, p.y, p.z
+        x, y, z = p.x, p.y, self.alt
         self.ask_id += 1
         self.answer = None
         self.ask_pub.publish(String(data=json.dumps(
             {'id': self.ask_id, 'x': round(t.x, 1), 'y': round(t.y, 1)})))
-        self.notify('THAY LUA: treo, cho xac nhan tren GUI', StatusText.WARNING)
+        self.notify('PHÁT HIỆN CHÁY: chờ xác nhận thả', StatusText.WARNING)
         try:
             res = self.fly_to(x, y, z, tol=-1.0, timeout=float('inf'),
                               stop=lambda: self.answer is not None)
@@ -462,7 +475,7 @@ class FireMission(GuidedNode):
         self.request_streams()
         if not self.wait_until(lambda: self.pose.header.stamp.sec > 0 and self.fix, 120.0):
             return log.error('khong co pose/GPS')
-        self.notify('San sang. Cham-giu ban do GUI -> "Chua chay tai day"')  # đúng chữ trên nút GUI (touch.wp_fire)
+        self.notify('Sẵn sàng nhận mục tiêu')
         # Chờ NGƯỜI, không phải chờ máy - không có hạn là đúng. Kiểm FC Ở ĐÂY chứ không trong _on_cmd:
         # GUI giao điểm ~1 s sau khi bật task, node chưa nhận /mavros/state nào -> 'FC chua noi' nhầm (e2e 07/11).
         while True:
@@ -472,68 +485,71 @@ class FireMission(GuidedNode):
             why = self.fc_why()
             if not why:
                 break
-            self.notify(f'Tu choi: {why}', StatusText.WARNING)  # không ARM, không đổi mode: bỏ điểm, chờ điểm mới
+            self.notify(f'Từ chối: {why}', StatusText.WARNING)  # không ARM, không đổi mode: bỏ điểm, chờ điểm mới
             self.hint = None
         hx, hy = self.hint_local()
         p = self.pose.pose.position
         if math.hypot(hx - p.x, hy - p.y) > self.max_range:
-            self.notify(f'Diem cham xa {math.hypot(hx - p.x, hy - p.y):.0f} m > '
-                        f'{self.max_range:.0f} m: tu choi', StatusText.WARNING)
+            self.notify(f'Từ chối: cự ly {math.hypot(hx - p.x, hy - p.y):.0f} m vượt '
+                        f'{self.max_range:.0f} m', StatusText.WARNING)
             return False
-        self.notify(f'Nhan diem chay ({hx:.0f}, {hy:.0f}) m, bay {self.search_alt:.0f} m')
+        self.notify(f'Mục tiêu ({hx:.0f}, {hy:.0f}) m, độ cao {self.search_alt:.0f} m')
         self.target, self.seen = None, 0  # mục tiêu cũ (nếu có) không được dẫn đường
 
         self.driving = True
         # 15 s chứ không 90 s mặc định: FC hỏng prearm giữa chừng thì THÔI, không ngồi đợi lỗi hết rồi tự ARM
         if not self.state.armed and not self.arm(timeout=15.0):
-            return self.give_up('Arm that bai')
+            return self.give_up('ARM không thành công')
+        # Home vừa đặt lại lúc ARM: chốt mặt đất TRƯỚC mọi phép so độ cao (self.alt, takeoff, setpoint).
+        if not self.latch_ground():
+            return self.give_up('Thiếu độ cao tương đối')
         if self.state.mode != 'GUIDED':
             self.set_mode('GUIDED')       # người vận hành vừa giao việc = đã chọn
         # WPNAV_SPEED_UP 2 m/s: 100 m mất ~50 s, hạn mặc định 60 s của takeoff() là sát nút.
         if self.alt < 1.0 and not self.takeoff(self.search_alt, timeout=30.0 + self.search_alt):
-            return self.give_up('Cat canh that bai')
+            return self.give_up('Cất cánh không thành công')
         q = self.pose.pose.orientation   # giữ nguyên hướng mũi
         self.yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
 
-        self.notify('Bay toi diem cham, tim quanh do')
+        self.notify('Tiếp cận mục tiêu và tìm kiếm')
         if not self.search_around(hx, hy):
             # bị giành lái cũng trả False - phải tách ra, không thì báo nhầm "không thấy"
-            return self.give_up('dang tim' if pilot_has_it(self.state)
-                                else f'Khong thay lua trong {self.search_radius:.0f} m')
+            return self.give_up('đang tìm kiếm' if pilot_has_it(self.state)
+                                else f'Không phát hiện cháy trong {self.search_radius:.0f} m')
         t = self.target.point
-        self.notify(f'Thay lua ({t.x:.1f}, {t.y:.1f}) x{self.zoom:g}')
+        self.notify(f'Phát hiện cháy ({t.x:.1f}, {t.y:.1f}) m, x{self.zoom:g}')
         ok = self.ask_operator()
         if not ok:
-            return self.give_up('Cho xac nhan' if ok is None else 'Khong phai lua (nguoi van hanh)')
-        self.notify(f'Da xac nhan, ha {self.drop_alt:.0f} m tha')
+            return self.give_up('chờ xác nhận' if ok is None else 'Người vận hành bác bỏ')
+        self.notify(f'Xác nhận thả: hạ tới {self.drop_alt:.0f} m')
         # WPNAV_SPEED_DN 1.5 m/s: hạ 100 -> 20 m mất ~55 s, cộng thời gian canh lại tâm.
         err = self.hold_over_fire(timeout=60.0 + self.search_alt)
         if err is None:
-            return self.give_up('Khong treo on dinh, KHONG tha')
+            return self.give_up('Chưa ổn định: hủy thả')
         t, fz = self.target.point, self.fire_z()
         if not self.gripper(GRIP_OPEN):
-            self.notify('DO_GRIPPER bi tu choi', StatusText.ERROR)
-        self.notify(f'DA THA BONG, lech {err:.2f} m, cach dat {self.pose.pose.position.z - fz:.1f} m')
+            self.notify('Lệnh mở cơ cấu bị từ chối', StatusText.ERROR)   # MAV_CMD_DO_GRIPPER
+        self.notify(f'ĐÃ THẢ: sai lệch {err:.2f} m, cao {self.alt - fz:.1f} m')   # cao = trên mặt quanh lửa
         if not self.ground:
-            self.notify('Khong do duoc mat dat (thieu van?): tinh theo muc nha', StatusText.WARNING)
-        log.info(f'mat dat: camera 2D {fz:.2f} ({len(self.ground)} so do), PnP ma ArUco {t.z:.2f}')
+            self.notify('Thiếu số đo mặt đất: mốc ARM', StatusText.WARNING)   # ground_range không ra số (thiếu vân?)
+        log.info(f'mat dat: camera 2D {fz:.2f} ({len(self.ground)} so do), PnP ma ArUco {t.z - self.z0:.2f}')
         self.wait_until(lambda: False, 2.0)
         if not self.gripper(GRIP_CLOSE):   # như gạt RC5 về 994
-            self.notify('DO_GRIPPER dong bi tu choi', StatusText.WARNING)
+            self.notify('Lệnh đóng cơ cấu bị từ chối', StatusText.WARNING)
 
         # Vòng kiểm tra: còn thấy đóm lửa là còn cháy (một bóng thì chỉ báo được).
         fx, fy = t.x, t.y
         self.seen = 0
-        self.notify('Bay vong kiem tra quanh dam chay')
+        self.notify('Bay vòng đánh giá sau khi thả')
         # Ở độ cao thả: cao hơn thì mã quá nhỏ, vòng kiểm tra báo nhầm hết lửa (đo ở 100 m).
         if self.fly_path(orbit_points(fx, fy, self.check_radius), fz + self.drop_alt) == 'pilot':
-            return self.give_up('Dang kiem tra')
+            return self.give_up('đang đánh giá')
         if self.seen:
-            self.notify(f'KIEM TRA: VAN THAY dom lua ({self.seen} khung)', StatusText.WARNING)
+            self.notify(f'ĐÁNH GIÁ: còn cháy ({self.seen} khung hình)', StatusText.WARNING)
         else:
-            self.notify('KIEM TRA: khong con thay dom lua')
+            self.notify('ĐÁNH GIÁ: không còn phát hiện cháy')
 
-        self.notify(f'Len {self.search_alt:.0f} m roi ve nha (RTL)')
+        self.notify(f'Lấy độ cao {self.search_alt:.0f} m, quay về (RTL)')
         self.set_zoom(1.0)
         self.climb_rtl()
         landed = self.wait_until(lambda: not self.state.armed, 240.0)
@@ -642,14 +658,23 @@ def _selfcheck():
     assert pts[0] == pts[-1] or math.dist(pts[0], pts[-1]) < 1e-9, 'vòng phải khép kín'
     assert max(math.dist(a, b) for a, b in zip(pts, pts[1:])) <= 6.0 + 1e-9
     # FC chưa sẵn sàng -> từ chối điểm cháy (07/11/2026 15:18: GPS Bad fix + Radio failsafe)
-    assert fc_block(False, False, True, True) == 'FC chua noi'
-    assert fc_block(True, False, True, False) == 'chua co vi tri GPS'
-    assert fc_block(True, False, False, True) == 'PreArm loi'
-    assert fc_block(True, False, None, True) == 'chua biet PreArm'
+    assert fc_block(False, False, True, True) == 'FC chưa kết nối'
+    assert fc_block(True, False, True, False) == 'chưa có định vị GPS'
+    assert fc_block(True, False, False, True) == 'PreArm chưa đạt'
+    assert fc_block(True, False, None, True) == 'chưa rõ trạng thái PreArm'
     assert fc_block(True, False, True, True) is None
     assert fc_block(True, True, False, True) is None, 'da ARM (diem moi giua task): chi can vi tri'
-    assert fc_block(True, True, None, False) == 'chua co vi tri GPS'
-    assert all(len('FIRE: Tu choi: ' + w) <= 50 for w in ('FC chua noi', 'chua co vi tri GPS', 'chua biet PreArm'))
+    assert fc_block(True, True, None, False) == 'chưa có định vị GPS'
+    # chữ có dấu: đo theo BYTE. Các câu dài nhất với số xấu nhất phải tới GCS nguyên vẹn
+    for w in ('Từ chối: chưa rõ trạng thái PreArm', 'Đang có nhiệm vụ: không nhận mới', 'Tiếp cận mục tiêu và tìm kiếm',
+              'ĐÃ THẢ: sai lệch 0.30 m, cao 120.0 m', 'PHI CÔNG CAN THIỆP (STABILIZE): dừng', 'GIỮ VỊ TRÍ: nhiệm vụ gián đoạn',
+              'ĐÁNH GIÁ: còn cháy (999 khung hình)', 'ĐÁNH GIÁ: không còn phát hiện cháy', 'PHÁT HIỆN CHÁY: chờ xác nhận thả',
+              'Mục tiêu (-300, -300) m, độ cao 120 m', 'Phát hiện cháy (-300.0, -300.0) m, x5',
+              pick_alts(120.5, None, 2.0, 120.0, 20.0, 20.0), pick_alts(120.0, 121.0, 5.0, 120.0, 20.0, 20.0),
+              pick_radius(62.5, 2.0, 50.0), 'Không phát hiện cháy trong 50 m -> RTL', 'Cất cánh không thành công -> RTL'):
+        assert fit_text('FIRE: ' + w) == 'FIRE: ' + w, (w, len(('FIRE: ' + w).encode()))
+    cut = fit_text('FIRE: ' + 'ửa' * 30)
+    assert len(cut.encode()) <= TEXT_MAX and cut.encode().decode() == cut and cut.endswith(('ử', 'a')), 'cắt giữa ký tự'
     print('fire_mission selfcheck OK')
 
 
