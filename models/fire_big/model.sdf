@@ -1,0 +1,30 @@
+<?xml version="1.0" ?>
+<!--
+  Đám lửa giả LỚN 3.6 x 2.55 m (ảnh của fire_a0 phóng ~3 lần, cùng tỉ lệ A0) cho bài THẢ NÉ NGƯỜI
+  (16/11/2026): tờ A0 1.19 x 0.84 m quá nhỏ - người đứng trong đó thì không còn chỗ nào trên lửa cách
+  người đủ xa để thả. Dùng chung ảnh của fire_a0 (không chép). Chỉ visual, tự phát sáng như fire_a0.
+  z = 0.06: đè lên tờ A0 (0.05) khi run_sim.sh NGUOI=1 thả nó vào cùng chỗ (-4, 10).
+-->
+<sdf version="1.9">
+  <model name="fire_big">
+    <static>true</static>
+    <link name="link">
+      <visual name="paper">
+        <pose>0 0 0.06 0 0 0</pose>
+        <geometry><plane><normal>0 0 1</normal><size>3.6 2.55</size></plane></geometry>
+        <material>
+          <ambient>0 0 0 1</ambient>
+          <diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 1</specular>
+          <emissive>1 1 1 1</emissive>
+          <pbr><metal>
+            <albedo_map>model://fire_a0/materials/textures/fire_a0.jpg</albedo_map>
+            <emissive_map>model://fire_a0/materials/textures/fire_a0.jpg</emissive_map>
+            <metalness>0</metalness>
+            <roughness>1</roughness>
+          </metal></pbr>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

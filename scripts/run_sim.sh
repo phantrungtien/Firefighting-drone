@@ -12,6 +12,11 @@
 #   ./scripts/run_sim.sh stop       tắt hết
 #   PARAMS=~/jetson/fire_mission_real.yaml   tham số nhiệm vụ drone thật (bay 5 m, thả 3 m...)
 #   CAM_ROLL=-8.2                   bù camera nghiêng (run_gui + fire_locator, chỉ ANH_A0=1)
+#   NGUOI=1 ANH_A0=1 ...            bài THẢ NÉ NGƯỜI: thả vào world đám lửa giả lớn 3.6 x 2.55 m (models/fire_big,
+#                                   đè lên tờ A0 ở (-4, 10)) + người đi vòng trong đó (models/walking_actor)
+#   PERSON_SCAN=0                   tắt Gemini dò người của run_gui (mặc định quét liên tục khi ARM) - dùng với
+#                                   scripts/sim_people.py (vị trí người THẬT của sim -> /fire/persons) để thử
+#                                   riêng logic né người
 #   ANH_A0=1 ./scripts/run_sim.sh   dò lửa bằng CHÍNH code Jetson (~/jetson/tracking_pi5/run_gui.py:
 #                                   YOLO lửa + Gemini + ground_range) đọc /rgb/image thay ArUco -
 #                                   tờ ảnh lửa A0 ở (-4, 10). run_gui giữ cổng 8080 (video có hộp lửa).
@@ -57,6 +62,15 @@ GUI=""; [ "${HEADLESS:-0}" = "1" ] && GUI="-s"
 (cd "$WS/worlds" && setsid -f gz sim $GUI -v3 -r "$WS/worlds/firedrop_forest.sdf" > "$LOG/gz.log" 2>&1)
 echo "[cho] Gazebo mo cong FDM 9002..."
 for i in $(seq 1 120); do ss -lun | grep -qE ":9002\b" && break; sleep 1; done
+if [ "${NGUOI:-0}" = "1" ]; then
+  # NGUOI_MODEL=walking_actor_edge: người đi vòng ở MÉP đám lửa (còn chỗ an toàn để thả)
+  for name in fire_big:-4:10 ${NGUOI_MODEL:-walking_actor}:0:0; do   # actor: waypoint đã là toạ độ thế giới
+    IFS=: read -r m x y <<< "$name"
+    gz service -s /world/firedrop_forest/create --reqtype gz.msgs.EntityFactory --reptype gz.msgs.Boolean \
+      --timeout 5000 --req "sdf_filename: \"$WS/models/$m/model.sdf\", name: \"$m\", pose: {position: {x: $x, y: $y}}" \
+      >> "$LOG/gz.log" 2>&1 || echo "[canh bao] khong tha duoc $m vao world"
+  done
+fi
 
 # -w xoá EEPROM: --add-param-file chỉ là MẶC ĐỊNH, EEPROM cũ sẽ đè nếu không xoá.
 (cd "$LOG" && setsid -f ~/ardupilot/Tools/autotest/sim_vehicle.py -v ArduCopter -f gazebo-iris \
@@ -89,7 +103,7 @@ if [ "$Y" = "true" ]; then
      --fire-model "$HOME/phantrungtien-fire-detection/models/best_nano_111_640.onnx" \
      --fire-conf 0.2 --fire-threads 1 --fire-hz 5 ${KEY:+--fire-verify "$KEY" --fire-scan 3 --fire-picture} \
      --calib "$WS/install/fire_drone/share/fire_drone/config/sim_cam_1920x1080.yaml" \
-     --cam-offset 0.26,0,-0.18 --cam-to-drop 0.26 --cam-roll "${CAM_ROLL:-0}" \
+     --cam-offset 0.26,0,-0.18 --cam-to-drop 0.26 --cam-roll "${CAM_ROLL:-0}" --person-scan "${PERSON_SCAN:-0.8}" \
      > "$LOG/run_gui.log" 2>&1)
   echo "Video run_gui:  http://$(tailscale ip -4 2>/dev/null || echo 127.0.0.1):8080/stream"
 elif [ "${VIDEO:-1}" != "0" ] && [ -f "$MJPEG" ]; then

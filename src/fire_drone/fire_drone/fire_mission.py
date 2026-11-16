@@ -25,7 +25,7 @@ import sys
 import time
 
 import rclpy
-from geometry_msgs.msg import PointStamped, PoseStamped, TwistStamped
+from geometry_msgs.msg import PointStamped, PolygonStamped, PoseArray, PoseStamped, TwistStamped
 from mavros_msgs.msg import StatusText
 from mavros_msgs.srv import CommandLong
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
@@ -172,6 +172,63 @@ def ground_filter(zs):
     return max(0.0, statistics.median(zs[-3:]), zs[-1])
 
 
+def quad_area(q):
+    """Diện tích tứ giác (4 góc theo vòng), m²."""
+    return abs(sum(q[i][0] * q[(i + 1) % 4][1] - q[(i + 1) % 4][0] * q[i][1] for i in range(4))) / 2
+
+
+def area_grid(quad, n=7, inset=0.15):
+    """Lưới n x n điểm BÊN TRONG tứ giác đám cháy (4 góc theo vòng), co vào `inset` mỗi mép: các ứng viên điểm thả.
+    Co mép: hộp lửa rộng hơn ngọn lửa một chút, thả sát mép là thả ra ngoài."""
+    a, b, c, d = quad
+    k = [inset + (1 - 2 * inset) * i / (n - 1) for i in range(n)]
+    return [tuple((1 - u) * (1 - v) * a[i] + u * (1 - v) * b[i] + u * v * c[i] + (1 - u) * v * d[i] for i in (0, 1))
+            for u in k for v in k]
+
+
+def person_tracks(sightings, speed, noise=0.5):
+    """[(giờ chụp, x, y)] -> mỗi người MỘT lần thấy mới nhất. Lần thấy sau nằm trong tầm đi bộ (speed x dt + noise)
+    của một người đã biết = chính người đó đã đi tới đây -> thay. Không ai đi tới được = người khác. Trong cùng một
+    khung, mỗi người chỉ nhận một hộp. Người ra khỏi khung / Gemini sót giữ lần thấy cuối, vùng có thể có họ nở dần.
+    ponytail: gán tham lam theo thứ tự; hai người đi sát nhau có thể bị gộp - khi đó vẫn còn người kia ở gần."""
+    tracks = []
+    for ts, x, y in sorted(sightings):
+        free = [k for k, (tt, tx, ty) in enumerate(tracks)
+                if tt < ts and math.dist((tx, ty), (x, y)) <= speed * (ts - tt) + noise]
+        if free:
+            k = min(free, key=lambda k: math.dist(tracks[k][1:], (x, y)))
+            tracks[k] = (ts, x, y)
+        else:
+            tracks.append((ts, x, y))
+    return tracks
+
+
+def pick_drop(center, cands, people, clear, cur=None, margin=0.3, speed=0.0):
+    """Điểm thả NÉ NGƯỜI: trong đám cháy, cách mọi người >= clear m, gần tâm lửa nhất. None = chưa có chỗ nào đủ
+    xa (giữ vị trí, không thả). Không có ai: tâm lửa như cũ.
+    people [(x, y, tuổi)]: tuổi = từ lúc CHỤP khung thấy người tới lúc bóng chạm đất (s). Người có thể đã đi
+    `speed` x tuổi m theo hướng bất kỳ: khoảng cách tính trừ đi quãng đó. Sim 16/11/2026: người ra khỏi khung
+    (5 m chỉ thấy ±1.65 m chiều hẹp), quét báo 0 người, bản cũ quên sau 6 s -> người đi 0.3 m/s quay lại, bóng
+    rơi cách 0.81 m. Quét 0 người chỉ chứng minh TRONG KHUNG không có ai, không chứng minh người đã đi xa.
+    Giữ điểm đang dùng `cur` chừng nào nó còn cách người >= clear; chọn điểm MỚI thì đòi clear + margin - người
+    đi sát ngưỡng không làm drone đổi điểm qua lại mỗi vòng lặp."""
+    if not people:
+        return center
+    gap = lambda q: min(math.dist(q, h[:2]) - speed * h[2] for h in people)  # noqa: E731
+    if cur is not None and gap(cur) >= clear:
+        return cur
+    ok = [q for q in [center] + list(cands) if gap(q) >= clear + margin]
+    return min(ok, key=lambda q: math.dist(q, center)) if ok else None
+
+
+def drop_height(drop_alt, search_alt, saw_person):
+    """Độ cao thả trên mặt đất. Nhiệm vụ đã thấy người: KHÔNG hạ, thả từ độ cao tìm (user 16/11/2026). Camera
+    nhìn thẳng xuống chỉ thấy người trong ~0.39 x (độ cao - 0.9 m) theo chiều hẹp khung: thả 3 m chỉ thấy người
+    cách ~0.6 m (sim: người đứng cách 1.1 m lọt khung, Gemini báo 0 người, bóng rơi cách người 1.11 m); 5 m thấy
+    ~1.5 m = person_clear. Đổi lại bóng rơi xa hơn nên lệch hơn một chút."""
+    return max(drop_alt, search_alt) if saw_person else drop_alt
+
+
 def orbit_points(cx, cy, radius, step=6.0):
     """Các điểm trên vòng tròn tâm (cx, cy), cách nhau ~step m, khép kín vòng."""
     n = max(6, math.ceil(2 * math.pi * radius / step))
@@ -203,6 +260,24 @@ class FireMission(GuidedNode):
         self.drop_tol = p('drop_tol', 0.3)          # lệch ngang tối đa lúc thả (m)
         self.descend_r = p('descend_radius', 2.0)   # lệch ngang hơn mức này thì chưa hạ
         self.check_radius = p('check_radius', 6.0)
+        # THẢ NÉ NGƯỜI (user 16/11/2026): điểm bóng chạm đất phải cách mọi người đã thấy (trừ quãng họ có thể đi
+        # person_speed m/s kể từ lúc chụp, xem pick_drop) ít nhất person_clear m. Người đã thấy nhớ person_memory s
+        # (cả lúc họ ra khỏi khung) - 120 s > person_wait: trong lúc chờ thả không bao giờ quên ai.
+        # ít nhất person_clear m - dời điểm thả trong đám cháy (/fire/area), không có chỗ thì giữ vị trí chờ tới
+        # person_wait giây rồi về mà KHÔNG thả. Người từ /fire/persons (fire_locator <- run_gui YOLO + Gemini).
+        self.person_clear = p('person_clear', 1.5)
+        self.person_memory = p('person_memory', 120.0)
+        # Đi bộ thường 1.0-1.4 m/s; sim actor 0.31. 0.5 = đi chậm/quanh quẩn. Với trễ Gemini ~2-4 s + rơi ~1 s
+        # người đi nhanh hơn thì không né bằng vị trí được: drone chờ rồi về KHÔNG thả (person_wait).
+        self.person_speed = p('person_speed', 0.5)
+        self.person_wait = p('person_wait', 60.0)
+        # Chỉ thả khi lần QUÉT NGƯỜI cả khung gần nhất (frame 'map_scan' = Gemini; YOLO không thấy người nhìn từ đỉnh
+        # đầu nên khung YOLO rỗng không chứng minh được gì) chụp chưa quá person_fresh giây. Đo sim 16/11/2026:
+        # Gemini 2-10 s/lần, có lần quá hạn - tin cũ hơn thế thì người đã đi tới chỗ khác. Chưa từng có lần quét
+        # nào trong task (không khoá Gemini / mất mạng từ đầu): không chặn, thả như trước khi có tính năng này.
+        self.person_fresh = p('person_fresh', 4.0)
+        self.people, self.area, self.hold_why, self.scan_t = [], None, None, None
+        self.saw_person = False     # đã thấy người lúc đang lái (drop_height)
         self.target = None
         self.driving = False                        # node đã arm/lái drone (không chỉ đang chờ chấm)
         self.seen = 0                               # số lần detector báo, để vòng kiểm tra đếm
@@ -215,6 +290,8 @@ class FireMission(GuidedNode):
         self.create_subscription(Float32, '/fire/ground_z',
                                  lambda m: self.ground.append(m.data), 10)
         self.create_subscription(String, '/gcs/command', self._on_cmd, 10)
+        self.create_subscription(PoseArray, '/fire/persons', self._on_people, 10)
+        self.create_subscription(PolygonStamped, '/fire/area', self._on_area, 10)
         self.create_subscription(NavSatFix, '/mavros/global_position/global',
                                  self._on_fix, qos_profile_sensor_data)
         self.create_subscription(TwistStamped, '/mavros/local_position/velocity_local',
@@ -236,6 +313,26 @@ class FireMission(GuidedNode):
     def _on_target(self, msg):
         self.target = msg
         self.seen += 1
+
+    def _on_people(self, msg):
+        ts = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9   # lúc CHỤP khung, không phải lúc tin tới
+        self.people += [(ts, q.position.x, q.position.y) for q in msg.poses]
+        if msg.poses and self.driving:
+            self.saw_person = True
+        if msg.header.frame_id == 'map_scan':
+            self.scan_t = max(self.scan_t or 0.0, ts)
+
+    def _on_area(self, msg):
+        quad = [(q.x, q.y) for q in msg.polygon.points]
+        # Giữ tứ giác RỘNG NHẤT đã thấy: hộp YOLO chỉ ôm một ngọn lửa, xuống thấp thì đám cháy tràn khung bị cắt
+        if len(quad) == 4 and (self.area is None or quad_area(quad) > quad_area(self.area)):
+            self.area = quad
+
+    def people_now(self, ahead=0.0):
+        """[(x, y, tuổi)] người đã thấy trong person_memory giây (ENU); tuổi tính tới `ahead` s sau bây giờ."""
+        now = time.time()
+        self.people = [q for q in self.people if now - q[0] < self.person_memory]
+        return [(x, y, now - ts + ahead) for ts, x, y in person_tracks(self.people, self.person_speed)]
 
     def _on_cmd(self, msg):
         ok = parse_confirm(msg.data, self.ask_id)
@@ -404,8 +501,8 @@ class FireMission(GuidedNode):
     def hold_over_fire(self, settle=2.0, timeout=90.0):
         """Tới ngay trên đóm lửa, hạ thẳng đứng xuống drop_alt trên mặt đất chỗ đó (mục tiêu
         và số đo mặt đất vẫn được tinh chỉnh khi hạ) tới khi lệch < drop_tol, đúng độ cao,
-        gần như đứng yên `settle` giây."""
-        self.ground = []
+        gần như đứng yên `settle` giây. Có người quanh đó: dời điểm thả / chờ, xem pick_drop."""
+        self.ground, self.hold_why = [], None
         try:
             return self._hold(settle, timeout)
         finally:
@@ -414,8 +511,44 @@ class FireMission(GuidedNode):
     def _hold(self, settle, timeout):
         end, since, measuring = time.time() + timeout, None, False
         zoom0, h0 = self.zoom, self.alt - self.fire_z()
+        cands = area_grid(self.area) if self.area else []   # đám cháy như lúc còn thấy trọn (độ cao tìm)
+        aim, told, wait0, park, high = None, None, None, None, self.saw_person
         while rclpy.ok() and time.time() < end:
             t, p, fz = self.target.point, self.pose.pose.position, self.fire_z()
+            dh = drop_height(self.drop_alt, self.search_alt, self.saw_person)
+            if self.saw_person and not high and dh > self.drop_alt:   # thấy người giữa lúc hạ: lên lại
+                high = True
+                self.notify(f'CÓ NGƯỜI: thả từ độ cao {dh:.0f} m', StatusText.WARNING)
+            # tuổi tính tới lúc bóng CHẠM ĐẤT nếu nhả NGAY: rơi tự do dh m + trễ cơ cấu. Không cộng `settle`: phép
+            # kiểm chạy lại mỗi vòng tới đúng lúc nhả (sim 16/11: cộng thừa 2 s x 0.5 m/s = vùng cấm rộng thêm 1 m,
+            # không bao giờ thả được)
+            people = self.people_now(ahead=math.sqrt(2 * dh / 9.81) + 0.3)
+            aim = pick_drop((t.x, t.y), cands, people, self.person_clear, aim, speed=self.person_speed)
+            stale = self.scan_t is not None and time.time() - self.scan_t > self.person_fresh
+            say = ('wait' if aim is None else 'stale' if stale else
+                   'move' if people and math.dist(aim, (t.x, t.y)) > 0.3 else None)
+            if say and say != told:
+                self.notify({'wait': 'CÓ NGƯỜI: chờ điểm thả an toàn', 'stale': 'Chờ dữ liệu dò người'}.get(say) or
+                            f'CÓ NGƯỜI: dời điểm thả {math.dist(aim, (t.x, t.y)):.1f} m', StatusText.WARNING)
+            told = say
+            if aim is None or stale:   # chưa được thả: đếm giờ chờ, quá person_wait thì về mà KHÔNG thả
+                wait0 = wait0 or time.time()
+                if time.time() - wait0 > self.person_wait:
+                    self.hold_why = 'Có người: hủy thả' if aim is None else 'Mất dò người: hủy thả'
+                    return None
+            elif wait0:   # thời gian chờ không tính vào hạn canh tâm
+                end, wait0 = end + time.time() - wait0, None
+            if aim is None:
+                # Không còn chỗ nào trong đám cháy đủ xa người: đứng yên tại chỗ, giữ độ cao
+                park, since = park or (p.x, p.y, self.alt), None
+                self.send_sp(*park)
+                rclpy.spin_once(self, timeout_sec=0.1)
+                if pilot_has_it(self.state):
+                    return None
+                continue
+            park = None
+            t = PointStamped().point
+            t.x, t.y = aim
             self.set_zoom(descent_zoom(zoom0, h0, self.alt - fz))
             herr = math.hypot(p.x - t.x, p.y - t.y)
             if not measuring and herr <= self.descend_r:
@@ -423,15 +556,15 @@ class FireMission(GuidedNode):
                 # bay ngang thì ảnh trôi chứ không nở, số đo đầu sai tới 12 m (18/10/2026).
                 measuring = True
                 self.ground_on.publish(Bool(data=True))
-            z = hold_z(herr, self.alt, fz, self.drop_alt, self.descend_r)
+            z = hold_z(herr, self.alt, fz, dh, self.descend_r)
             self.send_sp(t.x, t.y, z)
             rclpy.spin_once(self, timeout_sec=0.1)
             if pilot_has_it(self.state):
                 return None
             p, v = self.pose.pose.position, self.vel.twist.linear
             err = math.hypot(p.x - t.x, p.y - t.y)
-            if (err < self.drop_tol and abs(self.alt - fz - self.drop_alt) < 0.5
-                    and math.hypot(v.x, v.y, v.z) < 0.2):
+            if (err < self.drop_tol and abs(self.alt - fz - dh) < 0.5
+                    and math.hypot(v.x, v.y, v.z) < 0.2 and not stale):
                 since = since or time.time()
                 if time.time() - since >= settle:
                     return err
@@ -494,7 +627,7 @@ class FireMission(GuidedNode):
                         f'{self.max_range:.0f} m', StatusText.WARNING)
             return False
         self.notify(f'Mục tiêu ({hx:.0f}, {hy:.0f}) m, độ cao {self.search_alt:.0f} m')
-        self.target, self.seen = None, 0  # mục tiêu cũ (nếu có) không được dẫn đường
+        self.target, self.seen, self.area = None, 0, None  # mục tiêu cũ (nếu có) không được dẫn đường
 
         self.driving = True
         # 15 s chứ không 90 s mặc định: FC hỏng prearm giữa chừng thì THÔI, không ngồi đợi lỗi hết rồi tự ARM
@@ -521,15 +654,24 @@ class FireMission(GuidedNode):
         ok = self.ask_operator()
         if not ok:
             return self.give_up('chờ xác nhận' if ok is None else 'Người vận hành bác bỏ')
-        self.notify(f'Xác nhận thả: hạ tới {self.drop_alt:.0f} m')
+        dh = drop_height(self.drop_alt, self.search_alt, self.saw_person)
+        self.notify(f'Xác nhận thả: hạ tới {dh:.0f} m' if dh == self.drop_alt else
+                    f'Xác nhận, có người: thả từ {dh:.0f} m')
         # WPNAV_SPEED_DN 1.5 m/s: hạ 100 -> 20 m mất ~55 s, cộng thời gian canh lại tâm.
         err = self.hold_over_fire(timeout=60.0 + self.search_alt)
         if err is None:
-            return self.give_up('Chưa ổn định: hủy thả')
+            return self.give_up(self.hold_why or 'Chưa ổn định: hủy thả')
         t, fz = self.target.point, self.fire_z()
         if not self.gripper(GRIP_OPEN):
             self.notify('Lệnh mở cơ cấu bị từ chối', StatusText.ERROR)   # MAV_CMD_DO_GRIPPER
         self.notify(f'ĐÃ THẢ: sai lệch {err:.2f} m, cao {self.alt - fz:.1f} m')   # cao = trên mặt quanh lửa
+        seen = self.people_now()
+        if seen:
+            x, y, age = min(seen, key=lambda h: h[2])
+            log.info(f'luc tha: lan thay nguoi gan nhat {age:.1f} s truoc, cach drone '
+                     f'{math.hypot(x - self.pose.pose.position.x, y - self.pose.pose.position.y):.1f} m')
+        else:
+            log.info('luc tha: chua thay nguoi nao trong nhiem vu')
         if not self.ground:
             self.notify('Thiếu số đo mặt đất: mốc ARM', StatusText.WARNING)   # ground_range không ra số (thiếu vân?)
         log.info(f'mat dat: camera 2D {fz:.2f} ({len(self.ground)} so do), PnP ma ArUco {t.z - self.z0:.2f}')
@@ -542,7 +684,8 @@ class FireMission(GuidedNode):
         self.seen = 0
         self.notify('Bay vòng đánh giá sau khi thả')
         # Ở độ cao thả: cao hơn thì mã quá nhỏ, vòng kiểm tra báo nhầm hết lửa (đo ở 100 m).
-        if self.fly_path(orbit_points(fx, fy, self.check_radius), fz + self.drop_alt) == 'pilot':
+        dh = drop_height(self.drop_alt, self.search_alt, self.saw_person)   # có người: không hạ thấp quanh họ
+        if self.fly_path(orbit_points(fx, fy, self.check_radius), fz + dh) == 'pilot':
             return self.give_up('đang đánh giá')
         if self.seen:
             self.notify(f'ĐÁNH GIÁ: còn cháy ({self.seen} khung hình)', StatusText.WARNING)
@@ -652,6 +795,38 @@ def _selfcheck():
     assert ground_filter([4.8, 0.2, 0.1]) == 0.2, 'mái biến mất 2 lần liền thì theo số đông'
     assert ground_filter([-1.5, -2.0, -1.8]) == 0.0, 'đo mặt thấp hơn chỗ cất cánh: hạ dưới điểm đặt'
     assert ground_filter([-0.5, -20.0, -3.0]) == 0.0
+
+    # thả né người: đám lửa giả 3.6 x 2.55 m quanh (0, 0), người đi vòng bán kính 1 m tâm (0.5, 0)
+    quad = [(-1.8, -1.275), (1.8, -1.275), (1.8, 1.275), (-1.8, 1.275)]
+    assert abs(quad_area(quad) - 3.6 * 2.55) < 1e-9
+    grid = area_grid(quad)
+    assert len(grid) == 49 and all(abs(x) <= 1.8 * 0.7 + 1e-9 and abs(y) <= 1.275 * 0.7 + 1e-9 for x, y in grid)
+    assert pick_drop((0.0, 0.0), grid, [], 1.5) == (0.0, 0.0), 'không có ai: thả giữa đám cháy như cũ'
+    assert pick_drop((0.0, 0.0), grid, [(3.5, 0.0, 0)], 1.5) == (0.0, 0.0), 'người ở xa: vẫn thả giữa'
+    d = pick_drop((0.0, 0.0), grid, [(0.5, 0.0, 0)], 1.5)
+    assert d in grid and math.dist(d, (0.5, 0.0)) >= 1.8 and d[0] < 0, ('người gần tâm: dời sang phía bên kia', d)
+    assert pick_drop((0.0, 0.0), grid, [(0.5, 0.0, 0), (d[0] + 1.6, d[1], 0)], 1.5, cur=d) == d, 'còn >= clear: giữ'
+    assert pick_drop((0.0, 0.0), grid, [(0.5, 0.0, 0), (d[0] + 1.0, d[1], 0)], 1.5, cur=d) != d, 'người lại gần: đổi'
+    crowd = [(x, y, 0) for x in (-1.5, 0.0, 1.5) for y in (-1.0, 1.0)]
+    assert pick_drop((0.0, 0.0), grid, crowd, 1.5) is None, 'kín người: không thả'
+    assert pick_drop((0.0, 0.0), [], [(0.5, 0.0, 0)], 1.5) is None, 'không biết đám cháy rộng bao nhiêu: chờ, không dời bừa'
+    # người thấy 11 s trước cách 1.2 m rồi ra khỏi khung (sim 16/11: bản cũ quên, bóng rơi cách người 0.81 m):
+    # đi 0.5 m/s thì giờ có thể ở bất kỳ đâu trong 5.5 m -> không có điểm nào trong đám cháy an toàn
+    assert pick_drop((0.0, 0.0), grid, [(1.2, 0.0, 11.0)], 1.5, speed=0.5) is None, 'người ra khỏi khung: không quên'
+    assert pick_drop((0.0, 0.0), grid, [(1.2, 0.0, 11.0), (2.5, 0.0, 1.0)], 1.5, speed=0.5) is None, 'lần thấy cũ vẫn tính'
+    # gộp lần thấy: người đi vòng rồi ra khỏi khung -> còn MỘT người, lần thấy cuối; thấy lại ở xa -> thay
+    walk = [(t, 0.3 * t, 0.0) for t in range(5)]                          # 0.3 m/s theo x, thấy mỗi giây
+    assert person_tracks(walk, 0.5) == [(4, 1.2, 0.0)]
+    assert person_tracks(walk + [(4, -2.0, 0.0)], 0.5) == [(4, 1.2, 0.0), (4, -2.0, 0.0)], 'cùng khung: hai người'
+    assert person_tracks(walk + [(10, 3.4, 0.0)], 0.5) == [(10, 3.4, 0.0)], 'thấy lại sau 6 s, đi tới được: cùng người'
+    far = pick_drop((0.0, 0.0), grid, [(2.5, 0.0, 1.0)], 1.5, speed=0.5)
+    assert far is not None and math.dist(far, (2.5, 0.0)) - 0.5 >= 1.5, 'thấy mới, đủ xa (tính cả quãng đi): thả được'
+    assert drop_height(3.0, 5.0, False) == 3.0 and drop_height(3.0, 5.0, True) == 5.0, 'có người: thả từ độ cao tìm'
+    assert drop_height(5.0, 5.0, True) == 5.0
+    for w in ('CÓ NGƯỜI: chờ điểm thả an toàn', 'CÓ NGƯỜI: dời điểm thả 99.9 m', 'Có người: hủy thả -> RTL',
+              'CÓ NGƯỜI: thả từ độ cao 120 m', 'Xác nhận, có người: thả từ 120 m',
+              'Chờ dữ liệu dò người', 'Mất dò người: hủy thả -> RTL'):
+        assert fit_text('FIRE: ' + w) == 'FIRE: ' + w, w
 
     pts = orbit_points(18, 12, 8)
     assert all(abs(math.hypot(x - 18, y - 12) - 8) < 1e-9 for x, y in pts)

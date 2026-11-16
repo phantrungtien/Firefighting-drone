@@ -109,12 +109,14 @@ ok = until(lambda: v("mission.running") == "fire_mission", 30)
 log(f"bridge bao running=fire_mission: {ok} sau {time.time() - t_ask:.1f} s; "
     f"taskFire={st()['taskFire']}")
 
+wait(3000)  # node moi bat ~1,5 s sau moi nghe /gcs/command (16/11/2026: giao diem sau 1,6 s bi mat, task treo 420 s)
 # 3. Diem cham: mac dinh ma ArUco o Gazebo (18, 12) — gia su ENU (E, N)
 lat0, lon0 = home
 tgt = (lat0 + TAP[1] / 111320.0, lon0 + TAP[0] / (111320.0 * math.cos(math.radians(lat0))))
 log("diem cham", TAP, "m tu nha")
 m = win.touch.map
 m.follow = False
+m.zoom = 20  # zoom mac dinh 16 = ~2 m/diem anh: cu cham lech toi 3,9 m, task tim 2 m khong thay (16/11/2026)
 m.center = tgt
 m.update()
 wait(200)
