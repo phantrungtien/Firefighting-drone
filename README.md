@@ -2,7 +2,7 @@
 
 ROS 2 Humble + MAVROS cho drone ArduPilot cứu hỏa tự hành: người vận hành chấm
 điểm cháy trên bản đồ GUI_NATIVE, drone tự bay tới, tự tìm đóm lửa bằng camera,
-thả bóng chữa cháy, bay vòng kiểm tra rồi về. Mô phỏng: ArduCopter SITL + Gazebo
+thả bóng chữa cháy rồi bay thẳng về chỗ cất cánh hạ cánh. Mô phỏng: ArduCopter SITL + Gazebo
 Harmonic. Đóm lửa trong sim là **mã ArUco** (camera/model nhận lửa không bắt được
 lửa Gazebo).
 
@@ -77,10 +77,12 @@ Tuỳ chọn: `HEADLESS=1` (không cửa sổ Gazebo), `VIDEO=0` (không MJPEG),
    Lệch < 0.3 m, đúng độ cao, đứng yên 2 s -> `DO_GRIPPER` GRAB (servo GRIP_GRAB 1900, như gạt RC5 lên) thả bóng,
    2 s sau RELEASE (1100, như RC5 về) đóng lại.
    Vì sao 20 m: đo 18/10/2026, ở 100 m mã còn ~11 px, PnP lệch 1.8 m ngang / 9 m dọc.
-6. **Vòng kiểm tra** bán kính 6 m ở độ cao thả: đếm số khung còn thấy đóm lửa -> báo
-   "ĐÁNH GIÁ: còn cháy" / "không còn phát hiện cháy" (ở 100 m vòng này báo nhầm hết lửa).
-7. Leo thẳng đứng lại `alt` rồi mới RTL (RTL bay về ở độ cao hiện tại - ở 20 m là đâm
-   vào cái nhà lúc đi đã vượt qua). Bỏ task giữa chừng cũng vậy. Chờ disarm, node thoát.
+6. **Về ngay** (user 16/11/2026, cần cycle time thấp - đã BỎ vòng kiểm tra sau thả): leo thẳng đứng lại `alt`,
+   bay thẳng về chỗ ARM ở `alt` (GUIDED, cùng đường lúc đi), `LAND` tại đó; cơ cấu thả đóng 1.5 s sau lúc nhả,
+   trong lúc bay. Không RTL: RTL leo lên RTL_ALT rồi hạ chậm (sim: ~50 s của chu trình 78 s). Giao điểm lúc đang
+   bay sẵn (không có chỗ ARM) / bay về quá hạn: RTL như cũ.
+7. Bỏ task giữa chừng (không thấy lửa, người vận hành bác, có người...): leo thẳng đứng lại `alt` rồi RTL (RTL
+   bay về ở độ cao hiện tại - ở 20 m là đâm vào cái nhà lúc đi đã vượt qua). Chờ disarm, node thoát.
 
 Mỗi bước gửi STATUSTEXT `FIRE: ...` lên GCS (≤ 50 byte, không dấu).
 
@@ -99,7 +101,6 @@ drone treo tại chỗ (GUIDED giữ điểm cuối).
 | Detector | lệch ~0.02 m khi treo trên mã |
 | Bóng chạm đất | lệch 0.05 m (đo pose bóng 50 Hz) |
 
-Trong sim vòng kiểm tra luôn báo "còn cháy" vì tấm ArUco không tắt như lửa thật.
 
 ## Lưu ý mô phỏng
 

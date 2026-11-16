@@ -38,11 +38,6 @@ def generate_launch_description():
         DeclareLaunchArgument('search_radius', default_value=PythonExpression(
             ["2.0 if 'true' in ('", LaunchConfiguration('real'), "', '", LaunchConfiguration('yolo'),
              "') else 24.0"])),
-        # Vòng kiểm tra sau khi thả: drone thật / yolo cũng 2 m (user 26/10/2026: chỉ bay quanh 2 m;
-        # sim 6 m ra xa tâm 5.6 m, cách toà nhà ~3 m ở độ cao 5 m).
-        DeclareLaunchArgument('check_radius', default_value=PythonExpression(
-            ["2.0 if 'true' in ('", LaunchConfiguration('real'), "', '", LaunchConfiguration('yolo'),
-             "') else 6.0"])),
         # Drone thật: x6 = vùng cắt 640 px của khung 4K, bằng ảnh vào YOLO -> vẫn điểm ảnh thật.
         # Đo 23/10/2026 (ảnh lửa điện thoại): x5 điểm 0.59-0.63, x6 0.77-0.78. Sim 1080p: x6 là phóng ảnh.
         DeclareLaunchArgument('max_zoom', default_value=PythonExpression(
@@ -76,7 +71,6 @@ def generate_launch_description():
              condition=IfCondition(LaunchConfiguration('yolo'))),
         Node(package='fire_drone', executable='fire_mission', output='screen',
              parameters=[{'search_radius': LaunchConfiguration('search_radius'),
-                          'check_radius': LaunchConfiguration('check_radius'),
                           'max_zoom': LaunchConfiguration('max_zoom')}],
              condition=IfCondition(LaunchConfiguration('mission'))),
     ])

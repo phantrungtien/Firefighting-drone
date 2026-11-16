@@ -63,8 +63,10 @@ GUI=""; [ "${HEADLESS:-0}" = "1" ] && GUI="-s"
 echo "[cho] Gazebo mo cong FDM 9002..."
 for i in $(seq 1 120); do ss -lun | grep -qE ":9002\b" && break; sleep 1; done
 if [ "${NGUOI:-0}" = "1" ]; then
-  # NGUOI_MODEL=walking_actor_edge: người đi vòng ở MÉP đám lửa (còn chỗ an toàn để thả)
-  for name in fire_big:-4:10 ${NGUOI_MODEL:-walking_actor}:0:0; do   # actor: waypoint đã là toạ độ thế giới
+  # NGUOI_MODEL=walking_actor_edge: người đi vòng ở MÉP đám lửa (còn chỗ an toàn để thả); NGUOI_MODEL= (rỗng):
+  # chỉ đám lửa lớn, không có người
+  M="${NGUOI_MODEL-walking_actor}"
+  for name in fire_big:-4:10 ${M:+$M:0:0}; do
     IFS=: read -r m x y <<< "$name"
     gz service -s /world/firedrop_forest/create --reqtype gz.msgs.EntityFactory --reptype gz.msgs.Boolean \
       --timeout 5000 --req "sdf_filename: \"$WS/models/$m/model.sdf\", name: \"$m\", pose: {position: {x: $x, y: $y}}" \
