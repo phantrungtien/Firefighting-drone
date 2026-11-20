@@ -14,3 +14,7 @@ if [ -f "$AP_GZ/libArduPilotPlugin.so" ]; then
 else
   echo "CANH BAO: khong thay $AP_GZ/libArduPilotPlugin.so -> drone Gazebo khong noi duoc SITL" >&2
 fi
+# Gió lên thân drone (models/firehawk_x8): cd plugins/wind_drag && cmake -B build && cmake --build build
+WD="$WS/plugins/wind_drag/build"
+case ":$GZ_SIM_SYSTEM_PLUGIN_PATH:" in *":$WD:"*) ;; *)
+  export GZ_SIM_SYSTEM_PLUGIN_PATH="$WD${GZ_SIM_SYSTEM_PLUGIN_PATH:+:$GZ_SIM_SYSTEM_PLUGIN_PATH}" ;; esac
