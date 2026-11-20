@@ -11,9 +11,9 @@ nhưng fire_mission bay tới ngay trên rồi mới hạ - tia gần thẳng đ
 
 Nhiều đám cháy: mỗi khung chỉ lấy hộp điểm cao nhất, trung vị nuốt phần lẻ (CHECKLIST 3.5).
 
-THẢ NÉ NGƯỜI (16/11/2026): hộp người /person/detections (run_gui: YOLO + Gemini quét cả khung) -> /fire/persons
-(PoseArray ENU, stamp = lúc chụp khung; rỗng = đã nhìn, không có ai); bốn góc hộp lửa -> /fire/area (tứ giác ENU
-của đám cháy) để fire_mission chọn điểm thả trong đám cháy mà xa người.
+NGƯỜI (16/11/2026): hộp người /person/detections (run_gui: YOLO + Gemini quét cả khung) -> /fire/persons
+(PoseArray ENU, stamp = lúc chụp khung; rỗng = đã nhìn, không có ai) - run_gui vẽ dấu người + vòng ngắm đỏ.
+fire_mission KHÔNG né người (user 20/11/2026: bỏ thả né người tự động).
 
     python3 fire_locator.py --selfcheck
 """
@@ -26,7 +26,7 @@ import cv2
 import numpy as np
 import rclpy
 from ament_index_python.packages import get_package_share_directory
-from geometry_msgs.msg import Point32, PointStamped, PolygonStamped, Pose, PoseArray, PoseStamped
+from geometry_msgs.msg import PointStamped, Pose, PoseArray, PoseStamped
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, qos_profile_sensor_data
@@ -120,7 +120,6 @@ class FireLocator(Node):
         self.ground = []
         self.hits = []
         self.pub = self.create_publisher(PointStamped, '/fire/target', 10)
-        self.pub_area = self.create_publisher(PolygonStamped, '/fire/area', 10)
         self.pub_people = self.create_publisher(PoseArray, '/fire/persons', 10)
         self.create_subscription(Detection2DArray, '/person/detections', self.on_people, 10)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
@@ -170,7 +169,7 @@ class FireLocator(Node):
             return
         gz = self.ground_z()
         out = PoseArray()
-        # 'map_scan' = kết quả QUÉT cả khung (run_gui: Gemini) - fire_mission chỉ thả khi có lần quét còn mới
+        # 'map_scan' = kết quả QUÉT cả khung (run_gui: Gemini), 'map' = hộp YOLO
         out.header.stamp = msg.header.stamp
         out.header.frame_id = 'map_scan' if msg.header.frame_id == 'scan' else 'map'
         for d in msg.detections:
@@ -193,13 +192,6 @@ class FireLocator(Node):
         e = self.to_ground(c.x, c.y, pose, gz)
         if e is None:
             return
-        quad = [self.to_ground(c.x + i * best.bbox.size_x / 2, c.y + j * best.bbox.size_y / 2, pose, gz)
-                for i, j in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
-        if all(k is not None for k in quad):   # tứ giác đám cháy trên mặt đất (theo vòng)
-            area = PolygonStamped()
-            area.header.stamp, area.header.frame_id = msg.header.stamp, 'map'
-            area.polygon.points = [Point32(x=float(k[0]), y=float(k[1]), z=float(gz)) for k in quad]
-            self.pub_area.publish(area)
         self.hits.append(e)
         del self.hits[:-self.window]
         if len(self.hits) == self.confirm:

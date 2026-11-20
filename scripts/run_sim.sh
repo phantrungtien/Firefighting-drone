@@ -12,11 +12,10 @@
 #   ./scripts/run_sim.sh stop       tắt hết
 #   PARAMS=~/jetson/fire_mission_real.yaml   tham số nhiệm vụ drone thật (bay 5 m, thả 3 m...)
 #   CAM_ROLL=-8.2                   bù camera nghiêng (run_gui + fire_locator, chỉ ANH_A0=1)
-#   NGUOI=1 ANH_A0=1 ...            bài THẢ NÉ NGƯỜI: thả vào world đám lửa giả lớn 3.6 x 2.55 m (models/fire_big,
-#                                   đè lên tờ A0 ở (-4, 10)) + người đi vòng trong đó (models/walking_actor)
-#   PERSON_SCAN=0                   tắt Gemini dò người của run_gui (mặc định quét liên tục khi ARM) - dùng với
-#                                   scripts/sim_people.py (vị trí người THẬT của sim -> /fire/persons) để thử
-#                                   riêng logic né người
+#   NGUOI=1 ANH_A0=1 ...            đám lửa giả lớn 3.6 x 2.55 m (models/fire_big, đè lên tờ A0 ở (-4, 10)) + người
+#                                   đi vòng trong đó (models/walking_actor) - xem dấu người / vòng ngắm đỏ của run_gui
+#                                   (fire_mission KHÔNG né người, user 20/11/2026)
+#   PERSON_SCAN=0                   tắt Gemini dò người của run_gui (mặc định quét liên tục khi ARM)
 #   ANH_A0=1 ./scripts/run_sim.sh   dò lửa bằng CHÍNH code Jetson (~/jetson/tracking_pi5/run_gui.py:
 #                                   YOLO lửa + Gemini + ground_range) đọc /rgb/image thay ArUco -
 #                                   tờ ảnh lửa A0 ở (-4, 10). run_gui giữ cổng 8080 (video có hộp lửa).
