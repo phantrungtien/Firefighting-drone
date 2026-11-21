@@ -21,6 +21,12 @@ khi Jetson bật lại.
   `alt` rồi mới RTL).
 - [x] **Sim:** 120 m, mã 1.5 m: x1 không thấy → zoom x2 thấy sau 1.4 s, hạ thì zoom ra dần về x1.
 - [x] **Sim:** `ground_range` (camera 2D, không lidar) đất phẳng sai ±0.4 m ở 20–50 m, ±1.2 m ở 60–110 m.
+- [x] **Sim 21/11/2026, tìm 5 m thả 3 m (tham số thật, ảnh A0):** trước `cc82172` chỉ ra 0–1 số đo mặt đất,
+  có lần sai 1.3 m. Nguyên nhân: hạ và bật đo khi còn cách tâm lửa ≤ `descend_radius` 2 m, lúc drone còn
+  bay ngang/phanh nghiêng → ảnh trôi 30–120 px/khung, điểm ra khỏi khung. Sau `cc82172` (ngưỡng ≤ 10% độ
+  cao, chỉ bắt đầu khi tốc độ ngang < 0.3 m/s): 3/3 lượt có 1 số đo ở ~4 m, sai 0.07–0.17 m. Thường chỉ 1
+  số, vì phải hạ đủ 1 m (`min_step`) cho mỗi số; mái cao hơn (độ cao tìm − độ cao thả − 1 m) là sát mái
+  trước khi có số đầu.
 - [x] **Sim:** đóm lửa trên nóc nhà cấp 4 (mái 4 m): tách được mái / cỏ từ ~27 m, dừng ~21 m trên
   mái, bóng chạm mái lệch 7–14 cm.
 - [x] **Sim:** chấm vượt qua nhà 29 m (ngoài bán kính tìm 24 m) → tự thấy đám cháy, quay lại thả.
