@@ -4,11 +4,10 @@
       -> WebSocket -> ros2_bridge -> /gcs/command {"action":"fire_target","args":{lat,lon,alt}}
 
 Node: chờ lệnh -> (arm + cất cánh nếu đang dưới đất) -> bay thẳng tới điểm chấm
--> bay vòng nở dần quanh điểm đó tới khi detector thấy đóm lửa -> TREO TẠI CHỖ, chờ người
-vận hành trượt xác nhận trên GUI (user 29/10/2026; /fire/ask -> bridge -> topic `mission`.ask,
-trả lời {"action":"fire_confirm","args":{"id","ok"}}) -> treo trên đóm lửa -> thả bóng
--> bay thẳng về chỗ ARM ở độ cao tìm (GUIDED) rồi LAND - không vòng kiểm tra, không RTL (user 16/11/2026: cần
-cycle time thấp). "Không phải lửa" / bỏ giữa chừng = RTL như cũ.
+-> bay vòng nở dần quanh điểm đó tới khi detector thấy đóm lửa -> TỰ bay tới ngay trên, hạ, thả bóng - KHÔNG chờ
+người vận hành xác nhận (user 20/11/2026; bỏ thanh trượt "THẢ BÓNG" của 29/10) -> bay thẳng về chỗ ARM ở độ cao
+tìm (GUIDED) rồi LAND - không vòng kiểm tra, không RTL (user 16/11/2026: cần cycle time thấp). Bỏ giữa chừng = RTL.
+Lọc báo nhầm chỉ còn ở detector: fire_locator đủ confirm_frames, run_gui có Gemini thì Gemini xác nhận hộp lửa.
 Mỗi bước báo STATUSTEXT lên GCS (tab Thông báo).
 
 Cú chấm là người vận hành GIAO một việc có giới hạn. Gạt khỏi GUIDED (cần RC, nút
@@ -98,23 +97,6 @@ def parse_fire_cmd(raw):
     return lat, lon, alt, drop, radius
 
 
-def parse_confirm(raw, ask_id):
-    """JSON /gcs/command -> True (thả) / False (không phải lửa) / None (lệnh khác, rác, hoặc trả
-    lời cho LẦN HỎI KHÁC). id phải khớp: một cú trượt đến trễ qua 4G không được thả cho đóm
-    lửa sau mà người vận hành chưa nhìn."""
-    try:
-        msg = json.loads(raw)
-        if msg.get('action') != 'fire_confirm':
-            return None
-        args = msg['args']
-        ok, i = args['ok'], args['id']
-    except (ValueError, TypeError, KeyError, AttributeError):
-        return None
-    if not isinstance(ok, bool) or isinstance(i, bool) or i != ask_id:
-        return None
-    return ok
-
-
 def pick_radius(radius, default, max_r):
     """Phạm vi tìm người vận hành chọn -> m, hoặc chuỗi lý do từ chối. 0 = chỉ treo ở điểm
     chấm rồi zoom. Thiếu thì search_radius của node."""
@@ -173,6 +155,11 @@ def ground_filter(zs):
     return max(0.0, statistics.median(zs[-3:]), zs[-1])
 
 
+def in_zone(x, y, zone):
+    """Đám cháy (x, y) có nằm trong vùng người vận hành giao không. zone = (cx, cy, r) hoặc None (chưa giao: nhận)."""
+    return zone is None or math.dist((x, y), zone[:2]) <= zone[2]
+
+
 def orbit_points(cx, cy, radius, step=6.0):
     """Các điểm trên vòng tròn tâm (cx, cy), cách nhau ~step m, khép kín vòng."""
     n = max(6, math.ceil(2 * math.pi * radius / step))
@@ -204,9 +191,14 @@ class FireMission(GuidedNode):
         self.drop_tol = p('drop_tol', 0.3)          # lệch ngang tối đa lúc thả (m)
         self.descend_r = p('descend_radius', 2.0)   # lệch ngang hơn mức này thì chưa hạ
         self.target = None
+        # Vùng nhận đám cháy (cx, cy, r): điểm chấm + phạm vi tìm + 1 vòng (ring_step, ~nửa vết camera). Sim 21/11/2026:
+        # Gemini quét khung lúc vừa cất cánh báo "lửa" sát chỗ ARM (cách điểm chấm 14 m, phạm vi tìm 2 m) -> node nhận,
+        # tự thả ngay cạnh người vận hành. Từ khi bỏ bước người xác nhận (20/11) chỉ còn chốt này chặn.
+        self.zone = None
         self.driving = False                        # node đã arm/lái drone (không chỉ đang chờ chấm)
         self.home = None                            # (x, y) chỗ ARM nếu node tự cất cánh - go_home bay về đây
         self.hint = None                            # (lat, lon) người vận hành chấm
+        self.zone_warn = 0.0
         self.fix, self.fix_t = None, 0.0
         self.vel = TwistStamped()
         self.yaw = 0.0
@@ -228,19 +220,18 @@ class FireMission(GuidedNode):
         # ground_range chỉ chạy lúc hạ để thả: bay ngang/RTL qua nhà cao ảnh không phải một mặt
         self.ground_on = self.create_publisher(Bool, '/fire/ground_enable', latched)
         self.ground_on.publish(Bool(data=False))
-        # Đang chờ người vận hành xác nhận thả: JSON {"id","x","y"}, "" = không hỏi gì.
-        self.ask_pub = self.create_publisher(String, '/fire/ask', latched)
-        self.ask_pub.publish(String(data=''))
-        self.ask_id, self.answer = 0, None
 
     def _on_target(self, msg):
+        p = msg.point
+        if not in_zone(p.x, p.y, self.zone):
+            if time.time() - self.zone_warn > 5.0:   # fire_locator gửi liên tục: nhắc thưa thôi
+                self.zone_warn = time.time()
+                self.get_logger().warning(f'bo phat hien ({p.x:.1f}, {p.y:.1f}): cach diem cham '
+                                          f'{math.dist((p.x, p.y), self.zone[:2]):.0f} m > {self.zone[2]:.0f} m')
+            return
         self.target = msg
 
     def _on_cmd(self, msg):
-        ok = parse_confirm(msg.data, self.ask_id)
-        if ok is not None and self.answer is None:
-            self.answer = ok
-            return
         cmd = parse_fire_cmd(msg.data)
         if cmd is None:
             return  # lệnh khác của GUI, không phải việc của node này
@@ -438,8 +429,7 @@ class FireMission(GuidedNode):
     def hold_over_fire(self, settle=2.0, timeout=90.0):
         """Tới ngay trên đóm lửa, hạ thẳng đứng xuống drop_alt trên mặt đất chỗ đó (mục tiêu
         và số đo mặt đất vẫn được tinh chỉnh khi hạ) tới khi lệch < drop_tol, đúng độ cao,
-        gần như đứng yên `settle` giây. Không né người (user 20/11/2026: bỏ) - người vận hành nhìn
-        video (vòng ngắm đỏ + dấu X người của run_gui) rồi mới trượt xác nhận."""
+        gần như đứng yên `settle` giây. Không né người, không chờ người xác nhận (user 20/11/2026)."""
         self.ground = []
         try:
             return self._hold(settle, timeout)
@@ -474,24 +464,6 @@ class FireMission(GuidedNode):
                 since = None
         return None
 
-    def ask_operator(self):
-        """Thấy lửa: TREO tại chỗ đang đứng, chờ người vận hành nhìn video (có hộp lửa) rồi trượt
-        xác nhận trên GUI. True = thả, False = không phải lửa, None = phi công giành lái.
-        Chờ NGƯỜI nên không có hạn (như chờ điểm chấm); pin yếu thì failsafe pin của FC lo."""
-        p, t = self.pose.pose.position, self.target.point
-        x, y, z = p.x, p.y, self.alt
-        self.ask_id += 1
-        self.answer = None
-        self.ask_pub.publish(String(data=json.dumps(
-            {'id': self.ask_id, 'x': round(t.x, 1), 'y': round(t.y, 1)})))
-        self.notify('PHÁT HIỆN CHÁY: chờ xác nhận thả', StatusText.WARNING)
-        try:
-            res = self.fly_to(x, y, z, tol=-1.0, timeout=float('inf'),
-                              stop=lambda: self.answer is not None)
-        finally:
-            self.ask_pub.publish(String(data=''))   # GUI cất thanh trượt
-        return None if res == 'pilot' else self.answer
-
     def gripper(self, action):
         req = CommandLong.Request(command=MAV_CMD_DO_GRIPPER, param1=1.0, param2=float(action))
         r = self._call(self.cmd_cli, req)
@@ -519,16 +491,18 @@ class FireMission(GuidedNode):
                 return False
             why = self.fc_why()
             if not why:
+                # Xa quá = bấm nhầm: bỏ điểm, chờ điểm mới NHƯ mọi lý do từ chối khác. Bản cũ return False -> node
+                # thoát, người vận hành phải bật lại task (sim 20/11/2026).
+                hx, hy = self.hint_local()
+                p = self.pose.pose.position
+                d = math.hypot(hx - p.x, hy - p.y)
+                why = f'cự ly {d:.0f} m vượt {self.max_range:.0f} m' if d > self.max_range else None
+            if not why:
                 break
             self.notify(f'Từ chối: {why}', StatusText.WARNING)  # không ARM, không đổi mode: bỏ điểm, chờ điểm mới
             self.hint = None
-        hx, hy = self.hint_local()
-        p = self.pose.pose.position
-        if math.hypot(hx - p.x, hy - p.y) > self.max_range:
-            self.notify(f'Từ chối: cự ly {math.hypot(hx - p.x, hy - p.y):.0f} m vượt '
-                        f'{self.max_range:.0f} m', StatusText.WARNING)
-            return False
         self.notify(f'Mục tiêu ({hx:.0f}, {hy:.0f}) m, độ cao {self.search_alt:.0f} m')
+        self.zone = (hx, hy, self.search_radius + self.ring_step)
         self.target = None  # mục tiêu cũ (nếu có) không được dẫn đường
 
         self.driving = True
@@ -538,8 +512,12 @@ class FireMission(GuidedNode):
         # Home vừa đặt lại lúc ARM: chốt mặt đất TRƯỚC mọi phép so độ cao (self.alt, takeoff, setpoint).
         if not self.latch_ground():
             return self.give_up('Thiếu độ cao tương đối')
-        if self.state.mode != 'GUIDED':
-            self.set_mode('GUIDED')       # người vận hành vừa giao việc = đã chọn
+        # Người vận hành vừa giao việc = đã chọn GUIDED. ensure_mode, không set_mode một lần: lệnh rơi (MAVROS chưa
+        # sẵn service, sim 07/11/2026) thì task chạy tiếp trong mode cũ, rồi dừng báo nhầm "PHI CÔNG CAN THIỆP".
+        # Vẫn không vào được (phi công đổi mode trong lúc đó / FC từ chối): dừng, KHÔNG đổi mode.
+        if self.state.mode != 'GUIDED' and not self.ensure_mode('GUIDED', timeout=10.0):
+            self.notify(f'Không vào GUIDED ({self.state.mode}): dừng', StatusText.WARNING)
+            return False
         if self.alt < 1.0:   # tự cất cánh từ đây = chỗ ARM: go_home về đúng chỗ này. Đang bay sẵn: RTL như cũ
             self.home = (self.pose.pose.position.x, self.pose.pose.position.y)
         # WPNAV_SPEED_UP 2 m/s: 100 m mất ~50 s, hạn mặc định 60 s của takeoff() là sát nút.
@@ -555,10 +533,7 @@ class FireMission(GuidedNode):
                                 else f'Không phát hiện cháy trong {self.search_radius:.0f} m')
         t = self.target.point
         self.notify(f'Phát hiện cháy ({t.x:.1f}, {t.y:.1f}) m, x{self.zoom:g}')
-        ok = self.ask_operator()
-        if not ok:
-            return self.give_up('chờ xác nhận' if ok is None else 'Người vận hành bác bỏ')
-        self.notify(f'Xác nhận thả: hạ tới {self.drop_alt:.0f} m')
+        self.notify(f'Tự thả: hạ tới {self.drop_alt:.0f} m')
         # WPNAV_SPEED_DN 1.5 m/s: hạ 100 -> 20 m mất ~55 s, cộng thời gian canh lại tâm.
         err = self.hold_over_fire(timeout=60.0 + self.search_alt)
         if err is None:
@@ -623,15 +598,6 @@ def _selfcheck():
                 '{"action":"fire_target","args":{"lat":1,"lon":2,"radius":"NaN"}}']:
         assert parse_fire_cmd(bad) is None, bad
 
-    # xác nhận thả: chỉ đúng action + ok bool + id CỦA LẦN HỎI NÀY
-    c = lambda ok, i: json.dumps({'action': 'fire_confirm', 'args': {'ok': ok, 'id': i}})  # noqa: E731
-    assert parse_confirm(c(True, 3), 3) is True and parse_confirm(c(False, 3), 3) is False
-    assert parse_confirm(c(True, 2), 3) is None, 'trượt cho lần hỏi trước tới trễ -> không thả'
-    assert parse_confirm(ok, 3) is None, 'lệnh fire_target không phải câu trả lời'
-    for bad in [c('yes', 3), c(1, 3), c(True, True), c(True, '3'), 'rac', '[]',
-                '{"action":"fire_confirm"}', '{"action":"fire_confirm","args":{"ok":true}}']:
-        assert parse_confirm(bad, 3) is None, bad
-
     # phạm vi tìm: 0 = chỉ treo ở điểm chấm; quá max_search_radius / âm = từ chối
     assert pick_radius(None, 2.0, 10.0) == 2.0, 'GUI cũ: search_radius của node'
     assert pick_radius(0.0, 2.0, 10.0) == 0.0 and pick_radius(10.0, 2.0, 10.0) == 10.0
@@ -673,6 +639,10 @@ def _selfcheck():
     assert ground_filter([-1.5, -2.0, -1.8]) == 0.0, 'đo mặt thấp hơn chỗ cất cánh: hạ dưới điểm đặt'
     assert ground_filter([-0.5, -20.0, -3.0]) == 0.0
 
+    # chỉ nhận đám cháy trong vùng giao: drone thật chấm (10, -10), tìm 2 m + vòng 2 m; Gemini báo nhầm sát chỗ ARM
+    assert in_zone(0.7, 0.8, None), 'chưa giao điểm: chưa lọc'
+    assert not in_zone(0.7, 0.8, (10.0, -10.0, 4.0)), 'báo nhầm cách điểm chấm 14 m mà vẫn nhận -> thả cạnh người'
+    assert in_zone(12.5, -11.5, (10.0, -10.0, 4.0)) and not in_zone(13.0, -13.0, (10.0, -10.0, 4.0))
     pts = orbit_points(18, 12, 8)
     assert all(abs(math.hypot(x - 18, y - 12) - 8) < 1e-9 for x, y in pts)
     assert pts[0] == pts[-1] or math.dist(pts[0], pts[-1]) < 1e-9, 'vòng phải khép kín'
@@ -687,9 +657,9 @@ def _selfcheck():
     assert fc_block(True, True, None, False) == 'chưa có định vị GPS'
     # chữ có dấu: đo theo BYTE. Các câu dài nhất với số xấu nhất phải tới GCS nguyên vẹn
     for w in ('Từ chối: chưa rõ trạng thái PreArm', 'Đang có nhiệm vụ: không nhận mới', 'Tiếp cận mục tiêu và tìm kiếm',
-              'ĐÃ THẢ: sai lệch 0.30 m, cao 120.0 m', 'Xác nhận thả: hạ tới 120 m', 'Về chỗ ARM ở 120 m rồi hạ cánh',
+              'ĐÃ THẢ: sai lệch 0.30 m, cao 120.0 m', 'Tự thả: hạ tới 120 m', 'Về chỗ ARM ở 120 m rồi hạ cánh',
               'Không về được chỗ ARM: RTL', 'PHI CÔNG CAN THIỆP (STABILIZE): dừng', 'GIỮ VỊ TRÍ: nhiệm vụ gián đoạn',
-              'PHÁT HIỆN CHÁY: chờ xác nhận thả', 'Chưa ổn định: hủy thả -> RTL',
+              'Chưa ổn định: hủy thả -> RTL', 'Không vào GUIDED (STABILIZE): dừng',
               'Mục tiêu (-300, -300) m, độ cao 120 m', 'Phát hiện cháy (-300.0, -300.0) m, x5',
               pick_alts(120.5, None, 2.0, 120.0, 20.0, 20.0), pick_alts(120.0, 121.0, 5.0, 120.0, 20.0, 20.0),
               pick_radius(62.5, 2.0, 50.0), 'Không phát hiện cháy trong 50 m -> RTL', 'Cất cánh không thành công -> RTL'):

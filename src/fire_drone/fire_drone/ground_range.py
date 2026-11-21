@@ -91,7 +91,11 @@ class GroundRange(Node):
         self.work_w = p('work_width', 960)          # co khung về đây trước khi bám điểm
         self.inner = p('inner_frac', 0.08)          # đĩa giữa bỏ qua (đám cháy) / bề ngang
         self.outer = p('outer_frac', 0.36)          # ngoài vòng này không tính (~27 độ lệch trục)
-        self.min_step = p('min_step', 3.0)          # dh tối thiểu giữa hai khung đem so (m)
+        # dh tối thiểu giữa hai khung đem so (m). 1.0 chứ không 3.0: drone thật tìm 5 m thả 3 m chỉ hạ 2 m -> với
+        # 3.0 KHÔNG BAO GIỜ ra số (sim 20/11/2026: cả 3 bài A0 "Thiếu số đo mặt đất", thả theo mốc ARM - trên mái là
+        # sai). Ảnh vẫn đủ chuẩn ở 1 m (selfcheck 5 -> 4 m ra 4.01); sai số giờ chủ yếu từ dh của EKF/khí áp
+        # (~0.1 m = ~10% ở 1 m). Trên ~10 m thì step_frac quyết định như cũ.
+        self.min_step = p('min_step', 1.0)
         self.step_frac = p('step_frac', 0.1)        # ... và tối thiểu 10% khoảng cách hiện có
         self.cam_dz = p('camera_dz', -0.18)         # rgb_cam_link dưới base_link (model.sdf)
         # Xa hơn thì không gửi: hạ 11 m ở 120 m ảnh chỉ nở ~9%, drone vừa phanh còn nghiêng ->
@@ -215,6 +219,11 @@ def _selfcheck():
     house = fly(34.0, 24.0, 4.0)
     assert abs(house[0][0] - 20.0) < 1.0, f'phải đo tới mái (20 m), ra {house}'
     assert any(abs(d - 24.0) < 1.0 for d, _ in house), f'cỏ quanh nhà (24 m) phải là mặt thứ hai: {house}'
+    # drone thật tìm 5 m / thả 3 m: hạ 1 m (= min_step) đã phải ra số, có mái 1 m thì ra mái
+    low = fly(5.0, 4.0, 0)
+    assert low and abs(low[0][0] - 4.0) < 0.2, f'hạ 5 -> 4 m phải đo được đất 4 m: {low}'
+    roof = fly(5.2, 4.2, 1.0)
+    assert roof and abs(roof[0][0] - 3.2) < 0.2, f'mái 1 m dưới drone 4.2 m: phải ra 3.2 m, ra {roof}'
     assert looming_dist(1.0, 5.0) is None and looming_dist(0.9, 5.0) is None, 'không nở / ngược dấu'
     assert abs(looming_dist(0.9, -5.0) - 50.0) < 1e-9, 'leo 45 -> 50 m: ảnh co 0.9, ra khoảng cách SAU'
     print('ground_range selfcheck OK: dat phang ' + ', '.join(f'{d:.2f} m/{n}' for d, n in flat)

@@ -138,10 +138,8 @@ log("thanh truot:", slider.property("text"))
 drag(1.0)
 log("da truot xac nhan diem chay")
 
-# 4. Theo doi toi khi node xong (RTL + disarm) hoac het 420 s. Thay lua -> drone TREO hoi
-#    (29/10/2026): truot "THA BONG" nhu nguoi van hanh, moi cau hoi mot lan.
-ask_box, ask_slider = root.findChild(QQuickItem, "fireAsk"), root.findChild(QQuickItem, "askSlider")
-asked = None
+# 4. Theo doi toi khi node xong (ve cho ARM + disarm) hoac het 420 s. Thay lua la node TU tha
+#    (user 20/11/2026), khong con thanh truot hoi nguoi van hanh.
 t_fire = time.time()
 last = 0
 armed_seen = False
@@ -149,11 +147,6 @@ while time.time() - t_fire < 420:
     wait(500)
     armed = v("heartbeat.armed")
     armed_seen |= armed is True
-    ask = st().get("fireAsk")
-    if ask_box.isVisible() and ask != asked:
-        asked = ask
-        log("drone hoi THA BONG:", ask, "-> truot xac nhan")
-        drag(1.0, ask_slider)
     if time.time() - last > 10:
         last = time.time()
         lat, lon = v("position.lat"), v("position.lon")

@@ -27,7 +27,8 @@ khi Jetson bật lại.
 
 ## 1. Đã sửa, chưa kiểm đủ
 
-- [ ] **Xác nhận thả trên GUI** (user 29/10/2026): thấy lửa -> TREO tại chỗ, `/fire/ask` {id,x,y} ->
+- [x] **ĐÃ BỎ 20/11/2026 (user): bay tự hành tự thả, không chờ xác nhận.** Ghi chép cũ:
+  **Xác nhận thả trên GUI** (user 29/10/2026): thấy lửa -> TREO tại chỗ, `/fire/ask` {id,x,y} ->
   bridge -> `mission`.ask -> GUI hiện thanh trượt "THẢ BÓNG" + nút "Không phải lửa — về nhà" (RTL);
   trả lời `fire_confirm` {id, ok}, id sai (trượt trễ cho lần hỏi trước) bị bỏ. Không có hạn chờ (pin yếu
   thì failsafe FC). **Sim e2e 29/10 đạt** (WebSocket như GUI): thấy lửa 95 s -> treo, 8 s trôi 0.05 m

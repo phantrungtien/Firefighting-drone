@@ -66,7 +66,8 @@ Tuỳ chọn: `HEADLESS=1` (không cửa sổ Gazebo), `VIDEO=0` (không MJPEG),
    Jetson cắt giữa khung webcam 4K, luồng về GUI vẫn 960x540). Vòng tìm dày lên theo zoom.
    Lệnh zoom: `/fire/zoom` (std_msgs/Float32, transient local). Đo 18/10/2026 (mã 3 m, camera 960x540 vẽ thẳng):
    cần cạnh mã >= ~25 px mới đọc chắc (80 m x1: 80 %, 100 m: 18 %, 110 m: 0 %).
-5. Bay ngang tới **ngay trên** đóm lửa (lệch < 2 m mới hạ — hạ chéo là cắt qua nhà giữa
+5. Thấy lửa là **tự thả, không chờ người vận hành xác nhận** (user 20/11/2026: bỏ thanh trượt "THẢ BÓNG").
+   Bay ngang tới **ngay trên** đóm lửa (lệch < 2 m mới hạ — hạ chéo là cắt qua nhà giữa
    đường), hạ **thẳng đứng** xuống `drop_alt` 20 m trên đóm lửa (bay thấp hơn 20 m thì thả
    ở `alt`, không leo lên), vừa hạ vừa zoom ra dần về x1. "Trên đóm lửa" tính theo mặt
    đất `ground_range` đo bằng camera 2D trong lúc hạ (càng gần càng chuẩn; lọc bất đối xứng:
@@ -81,7 +82,7 @@ Tuỳ chọn: `HEADLESS=1` (không cửa sổ Gazebo), `VIDEO=0` (không MJPEG),
    bay thẳng về chỗ ARM ở `alt` (GUIDED, cùng đường lúc đi), `LAND` tại đó; cơ cấu thả đóng 1.5 s sau lúc nhả,
    trong lúc bay. Không RTL: RTL leo lên RTL_ALT rồi hạ chậm (sim: ~50 s của chu trình 78 s). Giao điểm lúc đang
    bay sẵn (không có chỗ ARM) / bay về quá hạn: RTL như cũ.
-7. Bỏ task giữa chừng (không thấy lửa, người vận hành bác...): leo thẳng đứng lại `alt` rồi RTL (RTL
+7. Bỏ task giữa chừng (không thấy lửa, chưa ổn định để thả...): leo thẳng đứng lại `alt` rồi RTL (RTL
    bay về ở độ cao hiện tại - ở 20 m là đâm vào cái nhà lúc đi đã vượt qua). Chờ disarm, node thoát.
 
 Mỗi bước gửi STATUSTEXT `FIRE: ...` lên GCS (≤ 50 byte, không dấu).
