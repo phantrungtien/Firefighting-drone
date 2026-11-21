@@ -27,6 +27,14 @@ khi Jetson bật lại.
   cao, chỉ bắt đầu khi tốc độ ngang < 0.3 m/s): 3/3 lượt có 1 số đo ở ~4 m, sai 0.07–0.17 m. Thường chỉ 1
   số, vì phải hạ đủ 1 m (`min_step`) cho mỗi số; mái cao hơn (độ cao tìm − độ cao thả − 1 m) là sát mái
   trước khi có số đầu.
+- [x] **Sim 21/11/2026, Gemini 429 (ép MỌI gọi Gemini trả HTTP 429):** bước THẢ không phụ thuộc Gemini
+  (fire_mission không đọc người từ 20/11). 429 chỉ làm phát hiện về "chỉ YOLO": vết đi khi YOLO ≥ 0.35
+  (`YOLO_ONLY`), quét cả khung (Gemini thấy khi YOLO sót) mất hẳn. Tờ A0 (YOLO yếu) → không phát hiện, RTL,
+  không thả; đám lửa giả lớn `fire_big` → YOLO thấy, thả lệch 0.01 m. 429 thấy trong sim là của quét người
+  (`gemini-3.5-flash`), khác model xác nhận lửa.
+- [ ] **Chế độ ảnh in BẬT trên Jetson** (`~/jetson/fire_picture` từ 27/10; user 21/11/2026: giữ, chỉ thử ảnh
+  A0): hộp Gemini tự nói `real=false` vẫn ra `/fire/detections` (sim: chấm nâu trên cỏ). Trước khi thử lửa
+  THẬT phải `rm ~/jetson/fire_picture`, không thì có thể thả nhầm (không còn người xác nhận).
 - [x] **Sim:** đóm lửa trên nóc nhà cấp 4 (mái 4 m): tách được mái / cỏ từ ~27 m, dừng ~21 m trên
   mái, bóng chạm mái lệch 7–14 cm.
 - [x] **Sim:** chấm vượt qua nhà 29 m (ngoài bán kính tìm 24 m) → tự thấy đám cháy, quay lại thả.
