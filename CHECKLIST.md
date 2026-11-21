@@ -60,6 +60,12 @@ khi Jetson bật lại.
   27/10/2026 (dưới đất, disarm): 08:32:23 mất video + WebSocket (mạng Jetson chết, chưa rõ vì
   sao), 08:34:45 SiK im 193 s = user RÚT DÂY SiK khỏi tablet (user xác nhận 29/10), FC không khởi
   động lại -> lúc đó không còn đường nào cho DualLink đổi sang. Chưa phải bài thử 2.4 thật.
+  **User chốt 21/11/2026: mất 4G/SiK giữa task -> bay hoàn thành task rồi về nhà.** Không cần sửa code:
+  bridge mất WebSocket chỉ bỏ client, `fire_mission` không theo dõi liên lạc GCS, app không tự gửi lệnh
+  khi mất đường, FC thật `FS_GCS_ENABLE` 0 (log 29/10). **Sim 21/11 đạt:** cắt WebSocket lúc "Tiếp cận"
+  ảnh A0 -> vẫn thấy lửa, thả lệch 0.02 m ở 3 m, về chỗ ARM ở 5 m, LAND cách chỗ ARM 0.2 m, disarm.
+  Sim không có GCS gửi heartbeat nên chưa thử phía FC (thật: FS_GCS_ENABLE 0 nên FC không can thiệp).
+  Huỷ task lúc đang hạ: đạt (sim 21/11, treo GUIDED, không thả).
 - [x] **2.5 Huỷ task / node `fire_mission` chết giữa task** (user chốt 27/10/2026: TREO + báo GUI,
   không tự đổi mode). Huỷ (SIGTERM): node gửi setpoint tại chỗ + STATUSTEXT `FIRE: TREO tai cho`;
   bridge báo đỏ (severity 2) "drone TREO o GUIDED, khong ai lai" ngay rồi nhắc mỗi 5 s, tối đa

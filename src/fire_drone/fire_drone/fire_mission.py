@@ -53,8 +53,20 @@ def fit_text(text, limit=TEXT_MAX):
 
 
 def pilot_has_it(state):
-    """Đang bay mà không ở GUIDED = phi công (cần RC / GCS) đã giành lái."""
+    """Đang bay mà không ở GUIDED = phi công (cần RC / GCS) đã giành lái - hoặc FC failsafe tự đổi mode."""
     return state.armed and state.mode != 'GUIDED'
+
+
+MAV_STATE_CRITICAL = 5   # ArduCopter vehicle_system_status: có failsafe đang bật (RC, pin, GCS, EKF, terrain, ADS-B, DR)
+
+
+def takeover_text(state):
+    """Câu báo khi node buông vì không còn GUIDED: FC failsafe hay phi công. Sim 21/11/2026: mất RC -> FC 'Radio
+    Failsafe' -> LAND/RTL mà node báo 'PHI CÔNG CAN THIỆP'. system_status đi CÙNG heartbeat với mode nên không lệch.
+    ponytail: phi công gạt mode lúc failsafe còn bật (vd pin đã failsafe) cũng ra 'FC FAILSAFE'; fence không đặt cờ
+    này (FC thật tắt fence) - cần phân biệt thì đọc thêm /mavros/statustext/recv."""
+    who = 'FC FAILSAFE' if state.system_status == MAV_STATE_CRITICAL else 'PHI CÔNG CAN THIỆP'
+    return f'{who} ({state.mode}): dừng'
 
 
 def fc_block(connected, armed, prearm_ok, has_pos):
@@ -296,7 +308,7 @@ class FireMission(GuidedNode):
         self.set_zoom(1.0)  # trả góc rộng cho người vận hành, không đụng gì tới bay
         if pilot_has_it(self.state):
             self.get_logger().warning(f'lúc đang: {why}')
-            self.notify(f'PHI CÔNG CAN THIỆP ({self.state.mode}): dừng', StatusText.WARNING)
+            self.notify(takeover_text(self.state), StatusText.WARNING)
         else:
             self.notify(f'{why} -> RTL', StatusText.WARNING)
             self.climb_rtl()
@@ -580,6 +592,9 @@ def _selfcheck():
     assert pilot_has_it(S(armed=True, mode='LOITER')) and pilot_has_it(S(armed=True, mode='RTL'))
     assert not pilot_has_it(S(armed=True, mode='GUIDED'))
     assert not pilot_has_it(S(armed=False, mode='STABILIZE')), 'chưa arm thì chưa ai lái'
+    # ai đổi mode: FC failsafe (MAV_STATE_CRITICAL) hay phi công (ACTIVE 4)
+    assert takeover_text(S(mode='RTL', system_status=5)) == 'FC FAILSAFE (RTL): dừng'
+    assert takeover_text(S(mode='LOITER', system_status=4)) == 'PHI CÔNG CAN THIỆP (LOITER): dừng'
 
     # lệnh từ mạng: chỉ đúng action + số hữu hạn trong khoảng mới qua
     ok = '{"action":"fire_target","args":{"lat":-35.36,"lon":149.16}}'
@@ -658,7 +673,7 @@ def _selfcheck():
     # chữ có dấu: đo theo BYTE. Các câu dài nhất với số xấu nhất phải tới GCS nguyên vẹn
     for w in ('Từ chối: chưa rõ trạng thái PreArm', 'Đang có nhiệm vụ: không nhận mới', 'Tiếp cận mục tiêu và tìm kiếm',
               'ĐÃ THẢ: sai lệch 0.30 m, cao 120.0 m', 'Tự thả: hạ tới 120 m', 'Về chỗ ARM ở 120 m rồi hạ cánh',
-              'Không về được chỗ ARM: RTL', 'PHI CÔNG CAN THIỆP (STABILIZE): dừng', 'GIỮ VỊ TRÍ: nhiệm vụ gián đoạn',
+              'Không về được chỗ ARM: RTL', 'PHI CÔNG CAN THIỆP (STABILIZE): dừng', 'FC FAILSAFE (STABILIZE): dừng', 'GIỮ VỊ TRÍ: nhiệm vụ gián đoạn',
               'Chưa ổn định: hủy thả -> RTL', 'Không vào GUIDED (STABILIZE): dừng',
               'Mục tiêu (-300, -300) m, độ cao 120 m', 'Phát hiện cháy (-300.0, -300.0) m, x5',
               pick_alts(120.5, None, 2.0, 120.0, 20.0, 20.0), pick_alts(120.0, 121.0, 5.0, 120.0, 20.0, 20.0),
