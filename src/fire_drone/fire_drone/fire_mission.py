@@ -451,16 +451,24 @@ class FireMission(GuidedNode):
     def _hold(self, settle, timeout):
         end, since, measuring = time.time() + timeout, None, False
         zoom0, h0 = self.zoom, self.alt - self.fire_z()
+        # descend_r 2 m là của sim bay 20 m (10% độ cao). Drone thật tìm 5 m: 2 m = 40% -> hạ + bật đo khi còn
+        # bay ngang/phanh, ảnh trôi 30-120 px/khung, điểm ra khỏi khung, 1.3/2 m hạ bỏ phí -> 0-1 số đo
+        # (sim 21/11/2026, phát lại khung ghi). Giữ 10% độ cao: 5 m -> 0.5 m, 20 m -> 2 m như cũ.
+        descend_r = min(self.descend_r, 0.1 * h0)
         while rclpy.ok() and time.time() < end:
             t, p, fz = self.target.point, self.pose.pose.position, self.fire_z()
             self.set_zoom(descent_zoom(zoom0, h0, self.alt - fz))
             herr = math.hypot(p.x - t.x, p.y - t.y)
-            if not measuring and herr <= self.descend_r:
+            v = self.vel.twist.linear
+            if not measuring and herr <= descend_r and math.hypot(v.x, v.y) < 0.3:
                 # Bật đo mặt đất khi bắt đầu HẠ thẳng đứng, không phải lúc còn bay ngang tới:
                 # bay ngang thì ảnh trôi chứ không nở, số đo đầu sai tới 12 m (18/10/2026).
+                # Và phải gần ĐỨNG YÊN: vừa tới còn đang phanh thì nghiêng, camera nhìn xéo ~1.6 m ở 5 m,
+                # thẳng lại là ảnh xoay -> độ nở lệch, đo xa hơn thật 1.3 m (sim 21/11/2026).
                 measuring = True
                 self.ground_on.publish(Bool(data=True))
-            z = hold_z(herr, self.alt, fz, self.drop_alt, self.descend_r)
+            # chưa bật đo thì chưa hạ (inf = giữ độ cao): hạ trước khi đo là phí đoạn 5 -> 3 m vốn đã ngắn
+            z = hold_z(herr if measuring else math.inf, self.alt, fz, self.drop_alt, descend_r)
             self.send_sp(t.x, t.y, z)
             rclpy.spin_once(self, timeout_sec=0.1)
             if pilot_has_it(self.state):
