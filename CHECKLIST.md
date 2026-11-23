@@ -68,8 +68,18 @@ khi Jetson bật lại.
   với nhà cao mái trơn.
 - [ ] **2.2 Mái nhỏ trên nhà cao** lọt trong đĩa giữa ảnh bị bỏ (`inner_frac`) → chỉ đo được đất
   phía dưới → hạ ngang mái. Thử tháp 20–30 m mái 4x4 m. Chắc chắn nhất: lidar hướng xuống.
-- [ ] **2.3 Phi công giành lái** (đổi mode / nút đỏ) ở từng pha: tìm, zoom, hạ, vòng kiểm tra —
+- [x] **2.3 Phi công giành lái** (đổi mode / nút đỏ) ở từng pha: tìm, zoom, hạ, vòng kiểm tra —
   node phải buông, không thả, không đổi mode.
+  **SITL trên Jetson 23/11/2026** (`scripts/sitl_takeover/run.sh none|search|descend|home`: ArduCopter SITL
+  octa-quad không Gazebo, `fire_mission_real.yaml` tìm 5 m thả 3 m, giả GUI / lửa / đo mặt đất; domain 42
+  localhost, không đụng hệ thật). Giành = LOITER, đọc mode + SERVO16 thẳng từ SITL:
+  `none` thả lệch 0.05 m, về chỗ ARM, LAND, disarm. `search` (5 m, đang tìm) -> "PHI CÔNG CAN THIỆP (LOITER)",
+  không thả. `descend` (1.5 s sau khi bật đo mặt đất) -> "Chưa ổn định: hủy thả", không thả. `home` (1 s sau khi
+  thả) -> buông. Cả 3: mode giữ LOITER 20 s, node không gửi lệnh đổi mode.
+  ⚠ Sau khi giành ở pha `home`, cơ cấu thả VẪN MỞ (SERVO16 1900): `go_home` trả 'pilot' trước lúc đóng 1.5 s.
+  Bóng đã rơi nên không nguy hiểm, nhưng hạ cánh với cơ cấu mở. Chưa sửa.
+  Phi công thật phải để ga GIỮA khi gạt sang LOITER/POSHOLD: trong SITL ga ở 1000 (override MAVROS bị bỏ vì
+  sysid khác `SYSID_MYGCS`) -> LOITER tụt 3.7 -> 0 m trong 2 s.
 - [ ] **2.4 Mất liên lạc giữa task:** mất LTE/WebSocket, mất SiK, bấm Huỷ task lúc đang hạ.
   27/10/2026 (dưới đất, disarm): 08:32:23 mất video + WebSocket (mạng Jetson chết, chưa rõ vì
   sao), 08:34:45 SiK im 193 s = user RÚT DÂY SiK khỏi tablet (user xác nhận 29/10), FC không khởi
