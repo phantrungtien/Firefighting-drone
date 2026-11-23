@@ -164,8 +164,9 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   ĐÃ BÙ 07/11/2026: `camera_roll` -8.2° (fire_locator, launch real:=true) = `--cam-roll` (run_gui, mặc định) -
   dời cả vòng ngắm LẪN vị trí lửa của fire_locator 0.8 m sang trái ở 5.5 m. CHƯA kiểm: nếu dây dọi rơi
   đúng vòng CŨ (camera thẳng, bóng bị cơ cấu đẩy lệch) thì trả về 0 và bù ở điểm thả thay vì camera.
-  **User 23/11/2026: BỎ QUA bài dây dọi**, giữ bù -8.2°. Lần thả thật đầu tiên nhìn chỗ bóng chạm so
-  với vòng: lệch ~0.8 m sang PHẢI vòng = bù sai chỗ -> trả `camera_roll` về 0.
+  **User 23/11/2026: BỎ QUA bài dây dọi**, giữ bù -8.2°. Ở 5.5 m hai giả thuyết (camera nghiêng / cơ cấu
+  đẩy lệch) đều cho bóng trúng vòng, chỉ khác ở độ cao khác. Task thả ở `drop_alt` 3 m: lần thả thật đầu
+  tiên ở 3 m nhìn chỗ bóng chạm so với vòng; lệch ngang thì chỉnh `camera_roll` / `--cam-roll` theo số đo.
   Sim 07/11 (ANH_A0=1, tham số nhiệm vụ thật `fire_mission_real.yaml`: tìm 5 m, thả 3 m; camera sim TẠM
   nghiêng -8.2°): KHÔNG bù -> lửa tính ra (-4.0, 10.7) thay vì (-4, 10), bóng lệch tâm A0 0.51 m; BÙ -8.2
   (`CAM_ROLL=-8.2 ./scripts/run_sim.sh`) -> lửa (-4.0, 10.0), bóng lệch 0.02 m = code bù đúng chiều, cả
