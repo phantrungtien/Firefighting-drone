@@ -1,6 +1,6 @@
 # Checklist task tự hành Chữa cháy
 
-Cập nhật 29/10/2026. `[x]` = đã kiểm (ghi ở đâu, ra sao), `[ ]` = còn phải kiểm.
+Cập nhật 23/11/2026 (tham số FC 4.5). `[x]` = đã kiểm (ghi ở đâu, ra sao), `[ ]` = còn phải kiểm.
 Thứ tự đề xuất: 2.1 → 3.1 → 2.3 / 2.4 (làm ngay trong sim, không cần phần cứng), rồi 4.1 / 4.2
 khi Jetson bật lại.
 
@@ -191,14 +191,21 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   định 5 / 3), `fire_target` mang `drop`; node từ chối drop ngoài [min_alt, alt]. Sim: drop 6 m ->
   "DA THA BONG ... cach dat 6.0 m". Chưa: giao điểm cháy thật trên drone (bay thật 27/10 tablet có
   nối WebSocket bridge - `stderr.log` 08:33 báo keepalive timeout - nhưng không bật task).
-- [ ] **4.5 Tham số FC** — 27/10/2026 user ghi (Mission Planner): `MAV1_OPTIONS` 4 (bit 2 bỏ qua
+- [x] **4.5 Tham số FC** — **ĐỌC LẠI 23/11/2026** (Jetson, pymavlink cổng if02, user chỉnh trên MP):
+  `RTL_ALT_M` 5, `BATT_MONITOR` 3 (chỉ áp), `BATT_LOW_VOLT` 21.6 / `BATT_CRT_VOLT` 21.0
+  (`BATT_FS_LOW_ACT` 2 RTL / `BATT_FS_CRT_ACT` 1 LAND), `BATT_ARM_VOLT` 22.1, `GRIP_NEUTRAL` 1100
+  (GRAB 1900 = mở / RELEASE 1100, SERVO16 = 28 gripper), **`FS_THR_ENABLE` 1 = mất RC -> RTL** (user
+  23/11 CỐ Ý đổi từ 3 = LAND; mất GPS thì FC tự LAND), `FS_GCS_ENABLE` 0, `FENCE_ENABLE` 0, `WP_SPD` 1,
+  `LAND_SPD_MS` 0.5. ⚠ `BATT_ARM_VOLT` 22.1 = 3.68 V/cell nghỉ (~20-30%): FC vẫn cho ARM pin vơi,
+  phải tự kiểm pin đầy (GUI `safe.not_full_v`). Ghi chép cũ bên dưới.
+  27/10/2026 user ghi (Mission Planner): `MAV1_OPTIONS` 4 (bit 2 bỏ qua
   lệnh đổi tần số của GCS) + `MAV1_POSITION/EXTRA1/EXTRA2/RAW_SENS` 10, `MAV1_EXT_STAT/EXTRA3` 2
   (cổng USB = MAVROS). Không có bit 2 thì Mission Planner cắm USB xin luồng mặc định và ArduPilot
   LƯU đè (ghi 10 -> khởi động lại còn 4). Bit 2 bật: giữ 10 qua khởi động lại (user kiểm trên MP).
   Tần số MAVROS ĐẠT (đo 29/10/2026 02:25 trên Jetson, chưa bật task): `global_position/rel_alt` 10.0 Hz,
   `imu/data` 10.0 Hz, `state` 1 Hz. (`local_position/pose` lúc đó im vì GPS đang tháo trong nhà -> EKF
-  chưa init; ra bãi cắm GPS phải thấy ~10 Hz.) CHƯA (user chỉnh trên Mission Planner ở bãi 30/10):
-  `RTL_ALT_M` 3 -> 5, `BATT_MONITOR` 3, `GRIP_NEUTRAL` 1100 (1900 = cơ cấu MỞ lúc FC khởi động).
+  chưa init; ra bãi cắm GPS phải thấy ~10 Hz.) (Từng ghi CHƯA: `RTL_ALT_M` 3 -> 5, `BATT_MONITOR` 3,
+  `GRIP_NEUTRAL` 1100 - ĐÃ XONG, xem đọc lại 23/11 ở đầu mục.)
   Tablet đọc lúc bay 27/10 08:18 (PARAM_VALUE trong tlog): `RTL_ALT_M` **3** (không phải 2),
   `BATT_LOW_VOLT` 21.6, `BATT_FS_LOW_ACT` 2 (RTL), `BATT_FS_CRT_ACT` 1 (LAND), `FS_THR_ENABLE` 3,
   `FS_GCS_ENABLE` 0, `FENCE_ENABLE` 0, `WP_SPD` 1. Không còn PreArm "Compasses inconsistent".
@@ -208,7 +215,7 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   vàng khi còn < 0.1 V/cell trên `BATT_LOW_VOLT`, đỏ khi chạm), kể cả khi FC không báo %; trước ARM
   báo áp nghỉ < 90% (`safe.not_full_v`). Pin cắm lúc 08:06 chỉ 3.96 V/cell (~70%) mà FC báo 97-99%.
   Đọc lại 27/10/2026 (ArduCopter 4.7.0): ĐÃ SỬA `RTL_ALT_M` 2, failsafe pin
-  (21.6 V RTL / 21.0 V LAND), mất RC = LAND, 1 la bàn, tắt lidar. Fence: user 27/10 KHÔNG bật
+  (21.6 V RTL / 21.0 V LAND), mất RC = LAND (23/11 đổi sang RTL), 1 la bàn, tắt lidar. Fence: user 27/10 KHÔNG bật
   (`FENCE_ENABLE` 0; node tự giới hạn alt 2-5 m, max_range 30 m, phạm vi tìm <= 10 m). `FS_GCS_ENABLE` bật cũng vô
   tác dụng với GUI_NATIVE: FC chỉ tính HEARTBEAT sysid 255, GUI là 254 và không gửi HEARTBEAT.
   Ghi chép cũ (đọc 23/10/2026): `RTL_ALT_M` 15 - QUÁ trần 5 m, phải hạ (RTL do failsafe bay về ở độ cao này, có thể
