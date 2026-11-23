@@ -90,6 +90,8 @@ khi Jetson bật lại.
   ảnh A0 -> vẫn thấy lửa, thả lệch 0.02 m ở 3 m, về chỗ ARM ở 5 m, LAND cách chỗ ARM 0.2 m, disarm.
   Sim không có GCS gửi heartbeat nên chưa thử phía FC (thật: FS_GCS_ENABLE 0 nên FC không can thiệp).
   Huỷ task lúc đang hạ: đạt (sim 21/11, treo GUIDED, không thả).
+  **Camera drone chết lúc đang hạ** (23/11/2026): `fire_mission` không kiểm mục tiêu cũ -> vẫn hạ, thả ở vị trí
+  lửa cuối cùng (không số đo mặt đất = mốc chỗ ARM). User 23/11: GIỮ NHƯ VẬY, không thêm hạn tuổi mục tiêu.
 - [x] **2.5 Huỷ task / node `fire_mission` chết giữa task** (user chốt 27/10/2026: TREO + báo GUI,
   không tự đổi mode). Huỷ (SIGTERM): node gửi setpoint tại chỗ + STATUSTEXT `FIRE: TREO tai cho`;
   bridge báo đỏ (severity 2) "drone TREO o GUIDED, khong ai lai" ngay rồi nhắc mỗi 5 s, tối đa
