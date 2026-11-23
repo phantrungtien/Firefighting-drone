@@ -231,7 +231,10 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   `max_zoom` 6 (sim 5): x6 = 640 px thật của khung 4K; ảnh lửa điện thoại x5 d0.6, x6 d0.78.
   27/10/2026 user đổi `max_zoom` **2** (YAML + launch real:=true): bay <= 5 m camera đã thấy ~7x4 m;
   không thấy lửa thì tìm hết x1..x6 với phạm vi 10 m mất ~58 phút (1 m/s), x1..x2 ~9 phút.
-- [ ] **4.6 Bay tự hành theo bậc:** HITL → bay thấp với tấm ArUco in đúng 1.5 m → lửa thật.
+- [ ] **4.6 Bay tự hành theo bậc:** ~~HITL~~ → bay tay RC 5 m (kiểm 4.7/4.8) → task với tờ A0 (giữ
+  `fire_picture`, xem bóng chạm so với vòng ở 3 m, 4.2c) → lửa thật (`rm ~/jetson/fire_picture` trước).
+  **User 23/11/2026: BỎ HITL** (ArduPilot chỉ có SIM-on-hardware, không nối Gazebo; chuỗi Jetson -> MAVROS
+  -> gripper / ARM đã kiểm riêng trên phần cứng, logic đạt trên SITL).
   GPS không RTK lệch 1–3 m; mục tiêu đo tương đối bằng camera nên ít ảnh hưởng.
 - [ ] **4.7 Video trắng xoá ngoài trời** (bay 27/10/2026, user báo). Tablet nhận đủ ~30 fps, mất ~0%,
   và lớp phủ mất hình của GUI là màu tối -> trắng nằm trong ảnh Jetson gửi. Nghi `--hl-ae 100 --gamma
@@ -252,3 +255,6 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   mặt đất nắng nhiều chi tiết ~800-970 KB/khung -> tràn. User giữ 4K (07/11). ĐÃ SỬA 07/11 (jetson,
   `restart_due` + `test_gst_watch.py`): camera còn đẩy khung (kể cả hỏng) thì KHÔNG dừng lại gst, chỉ
   dừng khi im thật hoặc hỏng liền > 10 s. CHƯA bay thử. Còn cách gốc: cắm modem 4G sang cổng/hub khác.
+  **Bàn 23/11/2026, tháo cánh chạy động cơ** (ARM 16:36:29-16:38:37, sau khi đệm camera + cố định cổ cáp
+  04/11): `nguon` 29.6-29.8 Hz cả 26 mẫu, 0 khung JPEG hỏng, 0 lần dựng lại gst, 0 lỗi USB kernel; ghi 4K
+  ~9.5 MB/s (1.2 GB / 2 phút). Rung động cơ trên bàn không còn làm hỏng camera. CÒN: bay thật.
