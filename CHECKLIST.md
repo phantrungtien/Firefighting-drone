@@ -212,7 +212,10 @@ Drone thật bay **tối đa 5 m** (user 24/10/2026): bỏ các mốc thử ở 
   (GRAB 1900 = mở / RELEASE 1100, SERVO16 = 28 gripper), **`FS_THR_ENABLE` 1 = mất RC -> RTL** (user
   23/11 CỐ Ý đổi từ 3 = LAND; mất GPS thì FC tự LAND), `FS_GCS_ENABLE` 0, `FENCE_ENABLE` 0, `WP_SPD` 1,
   `LAND_SPD_MS` 0.5. ⚠ `BATT_ARM_VOLT` 22.1 = 3.68 V/cell nghỉ (~20-30%): FC vẫn cho ARM pin vơi,
-  phải tự kiểm pin đầy (GUI `safe.not_full_v`). Ghi chép cũ bên dưới.
+  phải tự kiểm pin đầy (GUI `safe.not_full_v`). Chụp đủ 1032 tham số 17:57: pi5 `snapshot/20261123`
+  (README ghi khác bản 05/11). Thêm so với 05/11: `MOT_THST_HOVER` 0.176 -> 0.2, `MOT_THST_EXPO` 0.6,
+  `INS_GYRO_FILTER` 42, `ATC_RAT_*_FLT*` 21, `RC_OPTIONS` 0. ⚠ `MAV2_*` (TELEM1 = SiK) tất cả 0 (05/11 còn
+  EXTRA1 10...): GCS qua SiK phải tự xin luồng - kiểm tablet thấy vị trí qua SiK trước khi bay. Ghi chép cũ bên dưới.
   27/10/2026 user ghi (Mission Planner): `MAV1_OPTIONS` 4 (bit 2 bỏ qua
   lệnh đổi tần số của GCS) + `MAV1_POSITION/EXTRA1/EXTRA2/RAW_SENS` 10, `MAV1_EXT_STAT/EXTRA3` 2
   (cổng USB = MAVROS). Không có bit 2 thì Mission Planner cắm USB xin luồng mặc định và ArduPilot

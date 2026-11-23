@@ -129,9 +129,13 @@ src/fire_drone/
   config/sitl.parm                SR0_* cho SITL không Gazebo
   fire_drone/guided.py            GuidedNode (connect/arm/takeoff/land) + takeoff_test
   fire_drone/marker_detector.py   ArUco -> /fire/target
+  fire_drone/fire_locator.py      hộp lửa YOLO (/fire/detections, Jetson) -> tia camera cắt mặt đất -> /fire/target
+  fire_drone/ground_range.py      đo khoảng cách mặt đất bằng camera 2D khi hạ -> /fire/ground_z
   fire_drone/fire_mission.py      task Chữa cháy
 scripts/run_sim.sh                bật/tắt cả bộ
+scripts/sitl_takeover/            thử phi công giành lái trên SITL không Gazebo (chạy được trên Jetson)
 scripts/calib_charuco.py          chụp + calib webcam bằng bảng ChArUco (chạy trên Jetson)
+thermal/                          camera nhiệt MLX90640 qua I2C trên Jetson (xem thermal/README.md)
 models/                           TẠM chép từ ~/firedrop_sim - thay bằng mô hình SolidWorks sau
   firehawk_x4                     quad ZD650 4.69 kg (hộp/trụ, chưa mesh), camera nadir có nhiễu
   elide_fireball, fireball_05kg   bóng chữa cháy - vật rời tì lên chốt bay1
@@ -163,7 +167,13 @@ ros2 topic pub --once -w 1 /gcs/command std_msgs/String \
 ```
 `-w` của sim_vehicle xoá EEPROM: `--add-param-file` chỉ là giá trị mặc định, EEPROM cũ sẽ đè nếu không xoá.
 
+```bash
+# Phi công giành lái (2.3): SITL octa-quad + MAVROS + fire_mission tham số thật, giả GUI/lửa/mặt đất.
+# ROS_DOMAIN_ID 42 + localhost: chạy được trên Jetson cạnh drone-ros thật mà không lẫn topic.
+scripts/sitl_takeover/run.sh none|search|descend|home     # in DAT / KHONG DAT
+```
+
 ## Việc còn lại
 
-Xem [CHECKLIST.md](CHECKLIST.md): đã kiểm gì (sim + thực tế), còn phải kiểm gì trước khi bay
-tự hành thật.
+Tóm tắt chỗ đang đứng: [TIEN_DO_2026-11-23.md](TIEN_DO_2026-11-23.md). Chi tiết: [CHECKLIST.md](CHECKLIST.md):
+đã kiểm gì (sim + thực tế), còn phải kiểm gì trước khi bay tự hành thật.
