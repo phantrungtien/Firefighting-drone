@@ -8,3 +8,5 @@ __pycache__/
 # Mesh nguoi di bo (Gazebo Fuel "Walking actor") khong ghi giay phep -> khong dua len repo cong khai.
 # Lay: giai nen "Walking actor.zip" (Fuel) roi chep meshes/walk.dae vao models/walking_actor/meshes/
 models/walking_actor/meshes/walk.dae
+thermal/*.png
+thermal/*.npy
